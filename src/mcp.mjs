@@ -1,4 +1,5 @@
 import { createInterface } from 'node:readline';
+import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
 import { createDeviceAdapter } from './device.mjs';
 import { createPreviewServer } from './server.mjs';
@@ -14,19 +15,20 @@ const tools = [
   { name: 'key_event', description: 'Send Back, Home or Power to the device. Changes device UI state.', properties: { deviceId: device, key: { type: 'string', enum: ['Back', 'Home', 'Power'] } }, required: ['deviceId'] },
   { name: 'input_text', description: 'Input text at the focused field or a coordinate. Changes device UI state.', properties: { deviceId: device, text: { type: 'string', minLength: 1 }, x: { type: 'number', minimum: 0 }, y: { type: 'number', minimum: 0 } }, required: ['deviceId', 'text'] },
   { name: 'preview_start', description: 'Start live screenshot polling and return the preview URL.', properties: { deviceId: device }, required: ['deviceId'] },
-  { name: 'preview_stop', description: 'Stop live screenshot polling.', properties: {}, required: [] },
+  { name: 'preview_stop', description: 'Stop live screenshot polling. An optional sessionId prevents stopping a newer session.', properties: { sessionId: { type: 'string', minLength: 1 } }, required: [] },
   { name: 'build_run', description: 'Build the configured project, install its HAP and launch it. Changes device state; requires user authorization.', properties: { deviceId: device }, required: ['deviceId'] },
-  { name: 'preview_info', description: 'Return the local preview URL. Open it in the agent browser, select a device and start preview.', properties: {}, required: [] }
+  { name: 'preview_info', description: 'Return the local preview URL and current MCP preview session status.', properties: {}, required: [] }
 ].map(({ properties, required, ...tool }) => ({ ...tool, inputSchema: { type: 'object', properties, required, additionalProperties: false } }));
 
-const textResult = (value) => ({ content: [{ type: 'text', text: JSON.stringify(value) }] });
+const textResult = (value) => ({ content: [{ type: 'text', text: JSON.stringify(value) }], structuredContent: value });
 const rpcError = (id, code, message) => ({ jsonrpc: '2.0', id, error: { code, message } });
 
 export async function startMcp({ input = process.stdin, output = process.stdout, deviceAdapter = createDeviceAdapter(),
-  projectPath = process.env.HARMONY_PROJECT, port = Number(process.env.HARMONY_PREVIEW_PORT ?? 0) } = {}) {
+  projectPath = process.env.HARMONY_PROJECT, port = Number(process.env.HARMONY_PREVIEW_PORT ?? 0), previewTimeoutMs = 10000 } = {}) {
   const server = createPreviewServer({ deviceAdapter });
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
   const previewUrl = `http://127.0.0.1:${server.address().port}/`;
+  const wsUrl = previewUrl.replace('http:', 'ws:') + 'preview';
   const lines = createInterface({ input, crlfDelay: Infinity });
   let livePreview;
   let state = 'new';
@@ -76,7 +78,7 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
     validateArguments(tool.inputSchema, args);
     try {
       if (tool.name === 'list_devices') return textResult({ devices: await deviceAdapter.listTargets() });
-      if (tool.name === 'preview_info') return textResult({ previewUrl, projectPath: projectPath ?? null });
+      if (tool.name === 'preview_info') return textResult({ ...previewInfo(), projectPath: projectPath ?? null });
       if (tool.name === 'tap') return textResult(await deviceAdapter.tap(args));
       if (tool.name === 'swipe') return textResult(await deviceAdapter.swipe(args));
       if (tool.name === 'long_press') return textResult(await deviceAdapter.longPress(args));
@@ -84,50 +86,80 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
       if (tool.name === 'input_text') return textResult(await deviceAdapter.inputText(args));
       if (tool.name === 'build_run') return textResult(await buildAndRun(deviceAdapter, { projectPath, deviceId: args.deviceId }));
       if (tool.name === 'preview_start') return textResult(await startLivePreview(args.deviceId));
-      if (tool.name === 'preview_stop') return textResult(await stopLivePreview());
-      if (tool.name === 'capture' && livePreview?.deviceId === args.deviceId && livePreview.frame) {
-        return { content: [{ type: 'image', mimeType: livePreview.mimeType, data: livePreview.frame.toString('base64') }] };
+      if (tool.name === 'preview_stop') return textResult(await stopLivePreview(args.sessionId));
+      if (tool.name === 'capture' && livePreview?.deviceId === args.deviceId && livePreview.connected && livePreview.frame) {
+        return imageResult(livePreview.frame, livePreview.mimeType, { deviceId: args.deviceId, live: true, sessionId: livePreview.sessionId });
       }
       const frame = await deviceAdapter.capture(args);
-      return { content: [{ type: 'image', mimeType: frame.mimeType, data: frame.data.toString('base64') }] };
+      return imageResult(frame.data, frame.mimeType, { deviceId: args.deviceId, live: false, sessionId: null });
     } catch (error) { return { content: [{ type: 'text', text: error.message }], isError: true }; }
   }
 
-  function startLivePreview(deviceId) {
+  async function startLivePreview(deviceId) {
+    if (livePreview?.deviceId === deviceId && livePreview.frame) return previewInfo();
+    await stopLivePreview();
     return new Promise((resolve, reject) => {
-      stopLivePreview();
-      const socket = new WebSocket(previewUrl.replace('http:', 'ws:') + 'preview');
-      const state = { socket, deviceId, frame: null, mimeType: 'image/jpeg', started: false, settled: false };
+      const socket = new WebSocket(wsUrl);
+      const state = { socket, sessionId: randomUUID(), deviceId, frame: null, mimeType: 'image/jpeg', started: false, connected: false, settled: false, pollMs: null };
       livePreview = state;
-      const fail = (error) => { if (!state.settled) { state.settled = true; reject(error); } };
+      const timer = setTimeout(() => fail(new Error('Timed out waiting for the first preview frame; check device connection')), previewTimeoutMs);
+      const fail = (error) => {
+        if (state.settled) return;
+        state.settled = true;
+        clearTimeout(timer);
+        if (livePreview === state) livePreview = undefined;
+        socket.terminate();
+        reject(error);
+      };
       socket.on('open', () => socket.send(JSON.stringify({ type: 'preview-start', deviceId })));
       socket.on('error', fail);
-      socket.on('close', () => { if (livePreview === state) livePreview = undefined; });
-      socket.on('message', (message) => {
-        if (typeof message === 'string' || Buffer.isBuffer(message) && message[0] !== 0xff) {
+      socket.on('close', () => {
+        fail(new Error('Preview connection closed before the first frame'));
+        if (livePreview === state) livePreview = undefined;
+      });
+      socket.on('message', (message, isBinary) => {
+        if (!isBinary) {
           let event;
           try { event = JSON.parse(message.toString()); } catch { return; }
           if (event.type === 'frame-meta') state.mimeType = event.mimeType;
-          if (event.type === 'preview-status' && event.running) state.started = true;
+          if (event.type === 'preview-status') {
+            if (event.running) state.started = true;
+            state.connected = event.running;
+            if (event.pollMs) state.pollMs = event.pollMs;
+          }
           if (event.type === 'error') fail(new Error(event.error));
           return;
         }
         if (!state.started) return;
         state.frame = Buffer.from(message);
-        if (!state.settled) { state.settled = true; resolve({ deviceId, previewUrl, pollMs: eventPollMs() }); }
+        state.connected = true;
+        if (!state.settled) { state.settled = true; clearTimeout(timer); resolve(previewInfo()); }
       });
     });
   }
 
-  async function stopLivePreview() {
+  async function stopLivePreview(sessionId) {
     const state = livePreview;
+    if (sessionId && state && sessionId !== state.sessionId) throw new Error('Preview sessionId does not match the active session');
     livePreview = undefined;
     if (!state?.socket) return { running: false };
-    if (state.socket.readyState === WebSocket.OPEN || state.socket.readyState === WebSocket.CONNECTING) state.socket.close();
-    return { running: false, deviceId: state.deviceId };
+    if (state.socket.readyState !== WebSocket.CLOSED) {
+      const closed = new Promise((resolve) => state.socket.once('close', resolve));
+      state.socket.terminate();
+      await closed;
+    }
+    return { running: false, deviceId: state.deviceId, sessionId: state.sessionId };
   }
 
-  function eventPollMs() { return Number(process.env.HARMONY_PREVIEW_POLL_MS ?? 500); }
+  function previewInfo() {
+    return { previewUrl, wsUrl, running: Boolean(livePreview), connected: livePreview?.connected ?? false,
+      sessionId: livePreview?.sessionId ?? null, deviceId: livePreview?.deviceId ?? null, pollMs: livePreview?.pollMs ?? null,
+      capabilities: tools.map((tool) => tool.name) };
+  }
+}
+
+function imageResult(data, mimeType, structuredContent) {
+  return { content: [{ type: 'image', mimeType, data: data.toString('base64') }], structuredContent };
 }
 
 function validateArguments(schema, args) {

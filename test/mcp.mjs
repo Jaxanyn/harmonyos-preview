@@ -10,10 +10,12 @@ const input = new PassThrough();
 const output = new PassThrough();
 const responses = createInterface({ input: output })[Symbol.asyncIterator]();
 let taps = 0;
-const running = startMcp({ input, output, port: 0, projectPath: '', deviceAdapter: {
+let offline = false;
+const running = startMcp({ input, output, port: 0, projectPath: '', previewTimeoutMs: 200, deviceAdapter: {
   listTargets: async () => ['test-device'],
   capture: async ({ deviceId }) => {
-    if (deviceId === 'disconnected') throw new Error('device disconnected');
+    if (offline || deviceId === 'disconnected') throw new Error('device disconnected');
+    if (deviceId === 'png-device') return { mimeType: 'image/png', data: Buffer.from([0x89, 0x50, 0x4e, 0x47]) };
     return { mimeType: 'image/jpeg', data: Buffer.from([0xff, 0xd8, 0xff]) };
   },
   tap: async (args) => { taps += 1; return args; },
@@ -46,17 +48,51 @@ try {
   assert.deepEqual(JSON.parse(devices.result.content[0].text), { devices: ['test-device'] });
   const image = await request('tools/call', { name: 'capture', arguments: { deviceId: 'test-device' } });
   assert.deepEqual(image.result.content[0], { type: 'image', mimeType: 'image/jpeg', data: '/9j/' });
+  assert.deepEqual(image.result.structuredContent, { deviceId: 'test-device', live: false, sessionId: null });
   const previewStarted = await request('tools/call', { name: 'preview_start', arguments: { deviceId: 'test-device' } });
-  assert.equal(JSON.parse(previewStarted.result.content[0].text).deviceId, 'test-device');
+  const session = JSON.parse(previewStarted.result.content[0].text);
+  assert.equal(session.deviceId, 'test-device');
+  assert.equal(session.running, true);
+  assert.equal(session.connected, true);
+  assert.equal(session.pollMs, 500);
+  assert.match(session.sessionId, /^[\da-f-]{36}$/);
+  assert.equal(session.wsUrl, session.previewUrl.replace('http:', 'ws:') + 'preview');
+  assert.ok(session.capabilities.includes('tap'));
+  const repeated = await request('tools/call', { name: 'preview_start', arguments: { deviceId: 'test-device' } });
+  assert.deepEqual(JSON.parse(repeated.result.content[0].text), session, 'repeated start must reuse the same session');
+  assert.equal((await request('tools/call', { name: 'preview_stop', arguments: { sessionId: 'stale-session' } })).result.isError, true);
+  assert.equal(JSON.parse((await request('tools/call', { name: 'preview_info' })).result.content[0].text).sessionId, session.sessionId);
   const liveImage = await request('tools/call', { name: 'capture', arguments: { deviceId: 'test-device' } });
   assert.deepEqual(liveImage.result.content[0], { type: 'image', mimeType: 'image/jpeg', data: '/9j/' });
+  assert.deepEqual(liveImage.result.structuredContent, { deviceId: 'test-device', live: true, sessionId: session.sessionId });
+  offline = true;
+  await new Promise((resolve) => setTimeout(resolve, 550));
+  assert.equal(JSON.parse((await request('tools/call', { name: 'preview_info' })).result.content[0].text).connected, false);
+  assert.equal((await request('tools/call', { name: 'capture', arguments: { deviceId: 'test-device' } })).result.isError, true, 'offline capture must not return a stale cached image');
+  offline = false;
+  await new Promise((resolve) => setTimeout(resolve, 550));
+  assert.equal(JSON.parse((await request('tools/call', { name: 'preview_info' })).result.content[0].text).connected, true);
   assert.deepEqual(JSON.parse((await request('tools/call', { name: 'swipe', arguments: { deviceId: 'test-device', fromX: 1, fromY: 2, toX: 3, toY: 4 } })).result.content[0].text).toX, 3);
   assert.deepEqual(JSON.parse((await request('tools/call', { name: 'long_press', arguments: { deviceId: 'test-device', x: 1, y: 2 } })).result.content[0].text).x, 1);
   assert.deepEqual(JSON.parse((await request('tools/call', { name: 'key_event', arguments: { deviceId: 'test-device', key: 'Back' } })).result.content[0].text).key, 'Back');
   assert.deepEqual(JSON.parse((await request('tools/call', { name: 'input_text', arguments: { deviceId: 'test-device', text: 'hello' } })).result.content[0].text).text, 'hello');
   await request('tools/call', { name: 'tap', arguments: { deviceId: 'test-device', x: 12, y: 24 } });
   assert.equal(taps, 1);
-  assert.deepEqual(JSON.parse((await request('tools/call', { name: 'preview_stop' })).result.content[0].text), { running: false, deviceId: 'test-device' });
+  assert.deepEqual(JSON.parse((await request('tools/call', { name: 'preview_stop', arguments: { sessionId: session.sessionId } })).result.content[0].text), { running: false, deviceId: 'test-device', sessionId: session.sessionId });
+  assert.deepEqual(JSON.parse((await request('tools/call', { name: 'preview_stop' })).result.content[0].text), { running: false });
+  const pngStarted = JSON.parse((await request('tools/call', { name: 'preview_start', arguments: { deviceId: 'png-device' } })).result.content[0].text);
+  assert.notEqual(pngStarted.sessionId, session.sessionId);
+  const pngCapture = await request('tools/call', { name: 'capture', arguments: { deviceId: 'png-device' } });
+  assert.deepEqual(pngCapture.result.content[0], { type: 'image', mimeType: 'image/png', data: 'iVBORw==' });
+  assert.deepEqual(pngCapture.result.structuredContent, { deviceId: 'png-device', live: true, sessionId: pngStarted.sessionId });
+  const replaced = JSON.parse((await request('tools/call', { name: 'preview_start', arguments: { deviceId: 'test-device' } })).result.content[0].text);
+  assert.notEqual(replaced.sessionId, pngStarted.sessionId, 'switching device must replace the session');
+  const timedOut = await request('tools/call', { name: 'preview_start', arguments: { deviceId: 'disconnected' } });
+  assert.equal(timedOut.result.isError, true);
+  assert.match(timedOut.result.content[0].text, /Timed out/);
+  const stoppedInfo = JSON.parse((await request('tools/call', { name: 'preview_info' })).result.content[0].text);
+  assert.equal(stoppedInfo.running, false);
+  assert.equal(stoppedInfo.sessionId, null);
   for (const args of [{ deviceId: 'test-device', x: -1, y: 24 }, { deviceId: 'test-device', x: '12', y: 24 }, null]) {
     assert.equal((await request('tools/call', { name: 'tap', arguments: args })).error.code, -32602);
   }
@@ -77,6 +113,7 @@ try {
   assert.equal((await fetch(previewUrl + 'health')).status, 200);
   socket = new WebSocket(previewUrl.replace('http:', 'ws:') + 'preview');
   await new Promise((resolve, reject) => { socket.once('open', resolve); socket.once('error', reject); });
+  assert.equal((await request('tools/call', { name: 'preview_start', arguments: { deviceId: 'test-device' } })).result.isError, undefined, 'leave a live session for EOF cleanup');
 } finally {
   input.end();
   await running;

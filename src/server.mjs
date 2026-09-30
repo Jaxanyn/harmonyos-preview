@@ -242,7 +242,6 @@ function startPolling(socket, deviceAdapter, sessions, deviceId) {
       }
       const devices = await deviceAdapter.listTargets().catch(() => []);
       socket.send(JSON.stringify({ type: 'devices', devices }));
-      if (devices.includes(deviceId)) session.connected = true;
     }
     if (!session.stopped) session.timer = setTimeout(poll, pollMs);
   };

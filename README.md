@@ -60,18 +60,26 @@ codex mcp add harmonyos-preview --env HARMONY_PROJECT=C:\path\to\my-harmonyos-pr
 MCP 工具：
 
 - `list_devices`：列出连接的鸿蒙设备
-- `capture`：返回设备截图
+- `capture`：返回 MCP 图片内容；预览在线时复用最近一帧
 - `tap`：点击设备坐标
 - `swipe`：在两个坐标之间滑动
 - `long_press`：长按设备坐标
 - `key_event`：发送 Back、Home 或 Power
 - `input_text`：向焦点输入框或指定坐标输入文本
-- `preview_start`：启动 MCP 内部实时截图轮询
-- `preview_stop`：停止 MCP 内部实时截图轮询
+- `preview_start`：启动 MCP 内部实时截图轮询；相同设备重复启动复用会话
+- `preview_stop`：停止 MCP 内部实时截图轮询，可传入 `sessionId` 防止停止新会话
 - `build_run`：构建、安装并启动工程
-- `preview_info`：返回 Codex 浏览器中打开的实时预览地址
+- `preview_info`：返回预览地址、当前会话和设备连接状态
 
 stdio 模式只向 stdout 输出 JSON-RPC 消息，预览网页仍由本机 HTTP/WebSocket 服务承载。
+
+`preview_start` 在收到首帧后返回 `sessionId`、`deviceId`、`previewUrl`、`wsUrl`、`pollMs`、`running`、`connected` 和 `capabilities`。首帧等待超过 10 秒会返回工具错误并清理会话，检查设备连接后可重试。切换设备会关闭旧会话并创建新的会话编号。
+
+MCP 文本结果同时提供 `structuredContent`；截图结果提供图片内容和 `{ deviceId, live, sessionId }` 结构化元数据，Agent 不需要解析文本 JSON 才能识别当前设备和会话。
+
+`preview_info` 没有活动会话时返回 `running: false`，会话、设备和轮询间隔为 `null`。设备暂时离线时保留活动会话并返回 `connected: false`，`capture` 会尝试获取新截图，避免返回离线前的缓存图片。
+
+当前 `previewUrl` 指向独立的浏览器预览页面，仍需要选择设备并点击 Start preview；MCP 会话不会自动打开 Codex 面板或启动浏览器的轮询。这部分属于后续 Codex 工作流适配。
 
 ## 开发
 
