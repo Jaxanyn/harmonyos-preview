@@ -9,6 +9,8 @@
 
 轮询间隔可通过 HARMONY_PREVIEW_POLL_MS 配置，最小为 100ms；相同截图不会重复发送，只发送 preview-tick 的 changed: false 状态。
 
+本地服务默认只监听 127.0.0.1，HTTP/WebSocket 会拒绝非本机 Origin，请求体上限为 1 MiB；构建超时可通过 HARMONY_PREVIEW_BUILD_TIMEOUT_MS 配置，默认 5 分钟。
+
 ## Agent 接口
 
 启动 Host 时设置 `HARMONY_PROJECT` 指向 HarmonyOS 工程：

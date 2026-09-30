@@ -37,10 +37,16 @@ stage.onpointercancel=()=>{clearTimeout(longTimer);gestureStart=null};
 const staticFrame = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920"><rect width="1080" height="1920" fill="#10151c"/><rect x="48" y="70" width="984" height="1780" rx="42" fill="#1b2430"/><text x="540" y="850" text-anchor="middle" fill="#f4f6fa" font-size="56" font-family="system-ui">HarmonyOS Preview</text><text x="540" y="940" text-anchor="middle" fill="#9eabbc" font-size="34" font-family="system-ui">Static frame</text><circle cx="540" cy="1070" r="54" fill="#4f7cff"/></svg>`);
 const configuredPollMs = Number(process.env.HARMONY_PREVIEW_POLL_MS ?? 500);
 const pollMs = Number.isFinite(configuredPollMs) ? Math.max(100, Math.floor(configuredPollMs)) : 500;
+const maxBodyBytes = 1024 * 1024;
 const projectPath = process.env.HARMONY_PROJECT;
 
 export function createPreviewServer({ deviceAdapter = createDeviceAdapter() } = {}) {
   const server = createServer((request, response) => {
+    if (!isAllowedOrigin(request.headers.origin, server.address()?.port ?? port)) {
+      response.writeHead(403, { 'content-type': 'application/json; charset=utf-8' });
+      response.end(JSON.stringify({ error: 'origin_not_allowed' }));
+      return;
+    }
     if (request.url === '/') {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       response.end(previewPage);
@@ -92,7 +98,11 @@ export function createPreviewServer({ deviceAdapter = createDeviceAdapter() } = 
     response.writeHead(404, { 'content-type': 'application/json; charset=utf-8' });
     response.end(JSON.stringify({ error: 'not_found' }));
   });
-  const sockets = new WebSocketServer({ server, path: '/preview' });
+  const sockets = new WebSocketServer({
+    server,
+    path: '/preview',
+    verifyClient: ({ origin }) => isAllowedOrigin(origin, server.address()?.port ?? port)
+  });
   const sessions = new Map();
   sockets.on('connection', (socket) => {
     socket.send(JSON.stringify({ type: 'status', text: 'Preview connected' }));
@@ -114,7 +124,16 @@ export function createPreviewServer({ deviceAdapter = createDeviceAdapter() } = 
 function readJson(request) {
   return new Promise((resolve, reject) => {
     let body = '';
-    request.on('data', (chunk) => { body += chunk; });
+    let bytes = 0;
+    request.on('data', (chunk) => {
+      bytes += chunk.length;
+      if (bytes > maxBodyBytes) {
+        request.resume();
+        reject(Object.assign(new Error('request body too large'), { statusCode: 413 }));
+        return;
+      }
+      body += chunk;
+    });
     request.on('end', () => {
       try { resolve(JSON.parse(body || '{}')); } catch { reject(new Error('invalid_json')); }
     });
@@ -124,8 +143,22 @@ function readJson(request) {
 
 function sendJsonError(response, error) {
   if (response.headersSent) return;
-  response.writeHead(400, { 'content-type': 'application/json; charset=utf-8' });
+  response.writeHead(error.statusCode ?? 400, { 'content-type': 'application/json; charset=utf-8' });
   response.end(JSON.stringify({ error: error.message }));
+}
+
+function isAllowedOrigin(origin, actualPort) {
+  if (!origin) return true;
+  const configured = process.env.HARMONY_PREVIEW_ORIGIN;
+  if (configured) return origin === configured;
+  try {
+    const parsed = new URL(origin);
+    return parsed.protocol === 'http:' &&
+      (parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost') &&
+      Number(parsed.port || 80) === actualPort;
+  } catch {
+    return false;
+  }
 }
 
 async function handleSocketMessage(socket, deviceAdapter, sessions, message) {

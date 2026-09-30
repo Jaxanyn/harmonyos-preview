@@ -56,6 +56,8 @@ try {
   const health = await fetch(`http://127.0.0.1:${port}/health`);
   assert.equal(health.status, 200);
   assert.deepEqual(await health.json(), { name: 'harmonyos-preview', status: 'ok' });
+  const blockedOrigin = await fetch(`http://127.0.0.1:${port}/health`, { headers: { origin: 'https://evil.example' } });
+  assert.equal(blockedOrigin.status, 403);
 
   const missing = await fetch(`http://127.0.0.1:${port}/missing`);
   assert.equal(missing.status, 404);
@@ -82,7 +84,18 @@ try {
     body: JSON.stringify({ deviceId: 'test-device' })
   });
   assert.deepEqual(await apiCapture.json(), { mimeType: 'image/jpeg', data: Buffer.from('frame').toString('base64') });
+  const oversized = await fetch(`http://127.0.0.1:${port}/api/tap`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ deviceId: 'test-device', x: 1, y: 2, padding: 'x'.repeat(1024 * 1024) })
+  });
+  assert.equal(oversized.status, 413);
 
+  const blockedSocket = new WebSocket(`ws://127.0.0.1:${port}/preview`, { origin: 'https://evil.example' });
+  await new Promise((resolve) => {
+    blockedSocket.once('error', resolve);
+    blockedSocket.once('close', resolve);
+  });
+  blockedSocket.terminate();
   socket = new WebSocket(`ws://127.0.0.1:${port}/preview`);
   const messages = [];
   await new Promise((resolve, reject) => {
