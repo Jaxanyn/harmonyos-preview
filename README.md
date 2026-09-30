@@ -31,6 +31,16 @@ node bin/harmonyos-preview.mjs --project 'C:\path\to\my-harmonyos-project'
 
 以后发布为 npm 包后，入口命令名为 `harmonyos-preview`。
 
+生成本地安装包并安装：
+
+```powershell
+npm pack
+npm install --global .\harmonyos-preview-0.1.0.tgz
+harmonyos-preview --help
+```
+
+`npm run package-check` 会检查安装包只包含运行所需的 README、CLI 和源码目录。
+
 ## MCP 接入
 
 支持 MCP 的 Agent 可通过 stdio 启动插件：

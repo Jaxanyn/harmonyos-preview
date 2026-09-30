@@ -3,13 +3,26 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "files": [
+    "README.md",
+    "bin",
+    "src"
+  ],
   "bin": {
     "harmonyos-preview": "bin/harmonyos-preview.mjs"
   },
   "description": "面向 AI 编程 Agent 的 HarmonyOS 真机与模拟器实时预览及交互插件。",
   "scripts": {
     "start": "node src/server.mjs",
-    "check": "node --check src/server.mjs && node test/smoke.mjs && node test/mcp.mjs"
+    "check": "node --check src/server.mjs && node test/smoke.mjs && node test/mcp.mjs && node test/package.mjs",
+    "package-check": "node test/package.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Jaxanyn/harmonyos-preview.git"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
     "ws": "^8.18.3"
