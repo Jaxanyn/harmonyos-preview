@@ -1,10 +1,7 @@
 #!/usr/bin/env node
-import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
-
 const args = process.argv.slice(2);
 if (args.includes('--help') || args.includes('-h')) {
-  console.log('Usage: harmonyos-preview [--project <HarmonyOS project>]');
+  console.log('Usage: harmonyos-preview [--mcp] [--project <HarmonyOS project>]');
   process.exit(0);
 }
 
@@ -15,6 +12,12 @@ if (projectIndex >= 0) {
   process.env.HARMONY_PROJECT = projectPath;
 }
 
-const server = fileURLToPath(new URL('../src/server.mjs', import.meta.url));
-const child = spawn(process.execPath, [server], { env: process.env, stdio: 'inherit' });
-child.on('exit', (code, signal) => process.exit(code ?? (signal ? 1 : 0)));
+if (args.includes('--mcp')) {
+  const { startMcp } = await import('../src/mcp.mjs');
+  await startMcp();
+} else {
+  const { createPreviewServer } = await import('../src/server.mjs');
+  const host = process.env.HARMONY_PREVIEW_HOST ?? '127.0.0.1';
+  const port = Number(process.env.HARMONY_PREVIEW_PORT ?? 4100);
+  createPreviewServer().listen(port, host, () => console.log(`HarmonyOS Preview listening at http://${host}:${port}`));
+}

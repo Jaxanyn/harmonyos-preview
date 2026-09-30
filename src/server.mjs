@@ -3,8 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { WebSocketServer } from 'ws';
 import { createDeviceAdapter } from './device.mjs';
-import { buildProject, resolveHap } from './build.mjs';
-import { readProjectConfig } from './project.mjs';
+import { buildAndRun } from './build.mjs';
 
 const host = process.env.HARMONY_PREVIEW_HOST ?? '127.0.0.1';
 const port = Number(process.env.HARMONY_PREVIEW_PORT ?? 4100);
@@ -97,6 +96,11 @@ export function createPreviewServer({ deviceAdapter = createDeviceAdapter() } = 
     });
     socket.on('close', () => stopPolling(socket, sessions));
   });
+  server.shutdown = () => {
+    for (const socket of sockets.clients) { stopPolling(socket, sessions); socket.terminate(); }
+    server.closeAllConnections();
+    return new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  };
   return server;
 }
 
@@ -121,18 +125,9 @@ async function handleSocketMessage(socket, deviceAdapter, sessions, message) {
   let action;
   try { action = JSON.parse(message.toString()); } catch { throw new Error('invalid_message'); }
   if (action.type === 'build-run') {
-    if (!projectPath) throw new Error('HARMONY_PROJECT is not configured');
-    if (!action.deviceId) throw new Error('deviceId is required');
-    const config = readProjectConfig(projectPath);
-    socket.send(JSON.stringify({ type: 'run-status', text: 'Building' }));
-    const result = await buildProject(projectPath);
-    if (result.code !== 0) throw new Error(result.stderr.trim() || result.stdout.trim() || 'build failed');
-    const hapPath = resolveHap(projectPath, config.moduleName);
-    socket.send(JSON.stringify({ type: 'run-status', text: 'Installing' }));
-    await deviceAdapter.install({ deviceId: action.deviceId, hapPath });
-    socket.send(JSON.stringify({ type: 'run-status', text: 'Launching' }));
-    await deviceAdapter.launch({ deviceId: action.deviceId, bundleName: config.bundleName, ability: config.ability });
-    socket.send(JSON.stringify({ type: 'run-status', text: 'Running', bundleName: config.bundleName, ability: config.ability }));
+    const result = await buildAndRun(deviceAdapter, { projectPath, deviceId: action.deviceId },
+      (text) => { if (socket.readyState === 1) socket.send(JSON.stringify({ type: 'run-status', text })); });
+    if (socket.readyState === 1) socket.send(JSON.stringify({ type: 'run-status', text: 'Running', ...result }));
     return;
   }
   if (action.type === 'tap') {

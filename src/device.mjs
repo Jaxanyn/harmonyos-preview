@@ -1,8 +1,12 @@
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+const runtimeDirectory = fileURLToPath(new URL('../.runtime', import.meta.url));
 
 export function createDeviceAdapter({ command = process.env.HDC ?? 'hdc', runtime = runCommand } = {}) {
+  let captures = Promise.resolve();
   async function hdc(args) {
     return runtime(command, args);
   }
@@ -13,7 +17,14 @@ export function createDeviceAdapter({ command = process.env.HDC ?? 'hdc', runtim
     return result.stdout.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && line !== '[Empty]');
   }
 
-  async function capture({ deviceId, directory = '.runtime', fileName = 'latest.jpeg' } = {}) {
+  function capture(options) {
+    // Browser polling and MCP share one screenshot file; serialize to prevent mixed frames.
+    const next = captures.then(() => captureFrame(options));
+    captures = next.catch(() => {});
+    return next;
+  }
+
+  async function captureFrame({ deviceId, directory = runtimeDirectory, fileName = 'latest.jpeg' } = {}) {
     if (!deviceId) throw new Error('deviceId is required');
     mkdirSync(directory, { recursive: true });
     const remote = `/data/local/tmp/harmonyos-preview-${process.pid}.jpeg`;

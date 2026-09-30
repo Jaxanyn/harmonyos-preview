@@ -31,6 +31,24 @@ node bin/harmonyos-preview.mjs --project 'C:\path\to\my-harmonyos-project'
 
 以后发布为 npm 包后，入口命令名为 `harmonyos-preview`。
 
+## MCP 接入
+
+支持 MCP 的 Agent 可通过 stdio 启动插件：
+
+```powershell
+codex mcp add harmonyos-preview --env HARMONY_PROJECT=C:\path\to\my-harmonyos-project -- node C:\path\to\harmonyos-preview\bin\harmonyos-preview.mjs --mcp
+```
+
+MCP 工具：
+
+- `list_devices`：列出连接的鸿蒙设备
+- `capture`：返回设备截图
+- `tap`：点击设备坐标
+- `build_run`：构建、安装并启动工程
+- `preview_info`：返回 Codex 浏览器中打开的实时预览地址
+
+stdio 模式只向 stdout 输出 JSON-RPC 消息，预览网页仍由本机 HTTP/WebSocket 服务承载。
+
 ## 开发
 
 ```powershell

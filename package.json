@@ -9,7 +9,7 @@
   "description": "面向 AI 编程 Agent 的 HarmonyOS 真机与模拟器实时预览及交互插件。",
   "scripts": {
     "start": "node src/server.mjs",
-    "check": "node --check src/server.mjs && node test/smoke.mjs"
+    "check": "node --check src/server.mjs && node test/smoke.mjs && node test/mcp.mjs"
   },
   "dependencies": {
     "ws": "^8.18.3"
