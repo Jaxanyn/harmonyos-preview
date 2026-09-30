@@ -13,11 +13,11 @@ export function createDeviceAdapter({ command = process.env.HDC ?? 'hdc', runtim
     return result.stdout.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && line !== '[Empty]');
   }
 
-  async function capture({ deviceId, directory = '.runtime' } = {}) {
+  async function capture({ deviceId, directory = '.runtime', fileName = 'latest.jpeg' } = {}) {
     if (!deviceId) throw new Error('deviceId is required');
     mkdirSync(directory, { recursive: true });
     const remote = `/data/local/tmp/harmonyos-preview-${process.pid}.jpeg`;
-    const local = join(directory, `screen-${Date.now()}.jpeg`);
+    const local = join(directory, fileName);
     const shot = await hdc(['-t', deviceId, 'shell', 'snapshot_display', '-f', remote]);
     if (shot.code !== 0) throw new Error(shot.stderr.trim() || 'device screenshot failed');
     const recv = await hdc(['-t', deviceId, 'file', 'recv', remote, local]);

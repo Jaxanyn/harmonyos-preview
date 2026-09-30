@@ -13,7 +13,14 @@ assert.deepEqual(await fakeDevice.listTargets(), ['test-device']);
 assert.deepEqual(await fakeDevice.tap({ deviceId: 'test-device', x: 12.4, y: 30.6 }), { deviceId: 'test-device', x: 12, y: 31 });
 assert.equal(calls.length, 2);
 
-const server = createPreviewServer({ deviceAdapter: fakeDevice });
+let captured = 0;
+const sessionDevice = {
+  listTargets: async () => ['test-device'],
+  tap: async (action) => ({ deviceId: action.deviceId, x: action.x, y: action.y }),
+  capture: async () => { captured += 1; return { mimeType: 'image/jpeg', data: Buffer.from('frame') }; }
+};
+
+const server = createPreviewServer({ deviceAdapter: sessionDevice });
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const { port } = server.address();
 let socket;
@@ -47,6 +54,11 @@ try {
     socket.once('error', reject);
   });
   assert.deepEqual(JSON.parse(tapAck.toString()), { type: 'tap-ack', deviceId: 'test-device', x: 120, y: 240 });
+
+  socket.send(JSON.stringify({ type: 'preview-start', deviceId: 'test-device' }));
+  await new Promise((resolve) => setTimeout(resolve, 650));
+  assert.ok(captured >= 1);
+  socket.send(JSON.stringify({ type: 'preview-stop' }));
 } finally {
   socket?.terminate();
   await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
