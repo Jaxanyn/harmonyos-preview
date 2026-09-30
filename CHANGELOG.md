@@ -6,6 +6,7 @@
 - Added first-frame timeout cleanup and binary frame handling independent of image format.
 - Fixed reconnect status when a device remains listed but screenshot capture fails.
 - Added structured MCP results for session metadata and screenshot state.
+- Added the Codex workflow skill and installation/use guide.
 
 ## 0.1.0 - 2026-09-30
 

@@ -6,7 +6,9 @@
   "files": [
     "README.md",
     "bin",
-    "src"
+    "src",
+    "docs",
+    "skills"
   ],
   "bin": {
     "harmonyos-preview": "bin/harmonyos-preview.mjs"

@@ -81,6 +81,8 @@ MCP 文本结果同时提供 `structuredContent`；截图结果提供图片内�
 
 当前 `previewUrl` 指向独立的浏览器预览页面，仍需要选择设备并点击 Start preview；MCP 会话不会自动打开 Codex 面板或启动浏览器的轮询。这部分属于后续 Codex 工作流适配。
 
+Codex 工作流文件位于 `skills/harmonyos-preview-codex/SKILL.md`，完整安装和使用说明位于 `docs/codex-usage.md`。它们会随 npm 包一起提供；MCP 注册仍使用上面的 `codex mcp add` 命令。
+
 ## 开发
 
 ```powershell
