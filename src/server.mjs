@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { WebSocketServer } from 'ws';
@@ -34,7 +35,8 @@ stage.onpointercancel=()=>{clearTimeout(longTimer);gestureStart=null};
 </script></body></html>`;
 
 const staticFrame = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920"><rect width="1080" height="1920" fill="#10151c"/><rect x="48" y="70" width="984" height="1780" rx="42" fill="#1b2430"/><text x="540" y="850" text-anchor="middle" fill="#f4f6fa" font-size="56" font-family="system-ui">HarmonyOS Preview</text><text x="540" y="940" text-anchor="middle" fill="#9eabbc" font-size="34" font-family="system-ui">Static frame</text><circle cx="540" cy="1070" r="54" fill="#4f7cff"/></svg>`);
-const pollMs = Number(process.env.HARMONY_PREVIEW_POLL_MS ?? 500);
+const configuredPollMs = Number(process.env.HARMONY_PREVIEW_POLL_MS ?? 500);
+const pollMs = Number.isFinite(configuredPollMs) ? Math.max(100, Math.floor(configuredPollMs)) : 500;
 const projectPath = process.env.HARMONY_PROJECT;
 
 export function createPreviewServer({ deviceAdapter = createDeviceAdapter() } = {}) {
@@ -177,25 +179,29 @@ async function handleSocketMessage(socket, deviceAdapter, sessions, message) {
   }
 }
 
-function sendFrame(socket, frame, deviceId) {
+function sendFrame(socket, frame, deviceId, session) {
   if (socket.readyState !== 1) return;
+  const hash = createHash('sha1').update(frame.data).digest('hex');
+  if (session?.lastHash === hash) return false;
+  if (session) session.lastHash = hash;
   socket.send(JSON.stringify({ type: 'frame-meta', mimeType: frame.mimeType, deviceId }));
   socket.send(frame.data);
+  return true;
 }
 
 function startPolling(socket, deviceAdapter, sessions, deviceId) {
   stopPolling(socket, sessions);
-  const session = { stopped: false, timer: null, connected: true };
+  const session = { stopped: false, timer: null, connected: true, lastHash: null };
   sessions.set(socket, session);
   const poll = async () => {
     if (session.stopped || socket.readyState !== 1) return;
     try {
-      sendFrame(socket, await deviceAdapter.capture({ deviceId }), deviceId);
+      const changed = sendFrame(socket, await deviceAdapter.capture({ deviceId }), deviceId, session);
       if (!session.connected) {
         session.connected = true;
         socket.send(JSON.stringify({ type: 'preview-status', running: true, deviceId, reconnecting: false }));
       }
-      socket.send(JSON.stringify({ type: 'preview-tick', at: Date.now() }));
+      socket.send(JSON.stringify({ type: 'preview-tick', at: Date.now(), changed }));
     } catch (error) {
       if (session.connected) {
         session.connected = false;

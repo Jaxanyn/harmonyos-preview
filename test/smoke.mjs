@@ -112,9 +112,25 @@ try {
   });
   assert.deepEqual(JSON.parse(screenshot.toString()), { type: 'frame-meta', mimeType: 'image/jpeg', deviceId: 'test-device' });
 
+  const liveFrames = [];
+  const liveTicks = [];
+  const liveListener = (message) => {
+    if (message[0] === 0x66) liveFrames.push(message);
+    else {
+      try {
+        const event = JSON.parse(message.toString());
+        if (event.type === 'preview-tick') liveTicks.push(event);
+      } catch {}
+    }
+  };
+  socket.on('message', liveListener);
   socket.send(JSON.stringify({ type: 'preview-start', deviceId: 'test-device' }));
   await new Promise((resolve) => setTimeout(resolve, 650));
   assert.ok(captured >= 1);
+  socket.off('message', liveListener);
+  assert.equal(liveFrames.length, 1, 'unchanged polling frames must be skipped');
+  assert.ok(liveTicks.some((event) => event.changed === true));
+  assert.ok(liveTicks.some((event) => event.changed === false));
   socket.send(JSON.stringify({ type: 'preview-stop' }));
 } finally {
   socket?.terminate();

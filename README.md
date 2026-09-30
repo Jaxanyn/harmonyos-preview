@@ -7,6 +7,8 @@
 
 预览会话支持设备列表刷新和断线重试：设备暂时离线时保留会话，设备重新连接后自动恢复截图轮询；多个连接设备可在预览页下拉框中切换。
 
+轮询间隔可通过 HARMONY_PREVIEW_POLL_MS 配置，最小为 100ms；相同截图不会重复发送，只发送 preview-tick 的 changed: false 状态。
+
 ## Agent 接口
 
 启动 Host 时设置 `HARMONY_PROJECT` 指向 HarmonyOS 工程：
