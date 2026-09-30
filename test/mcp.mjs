@@ -36,14 +36,19 @@ try {
   assert.deepEqual(initialized.result.capabilities, { tools: {} });
   input.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
   const listed = await request('tools/list');
-  assert.deepEqual(listed.result.tools.map((tool) => tool.name), ['list_devices', 'capture', 'tap', 'build_run', 'preview_info']);
+  assert.deepEqual(listed.result.tools.map((tool) => tool.name), ['list_devices', 'capture', 'tap', 'preview_start', 'preview_stop', 'build_run', 'preview_info']);
   assert.deepEqual((await request('ping')).result, {});
   const devices = await request('tools/call', { name: 'list_devices' });
   assert.deepEqual(JSON.parse(devices.result.content[0].text), { devices: ['test-device'] });
   const image = await request('tools/call', { name: 'capture', arguments: { deviceId: 'test-device' } });
   assert.deepEqual(image.result.content[0], { type: 'image', mimeType: 'image/jpeg', data: '/9j/' });
+  const previewStarted = await request('tools/call', { name: 'preview_start', arguments: { deviceId: 'test-device' } });
+  assert.equal(JSON.parse(previewStarted.result.content[0].text).deviceId, 'test-device');
+  const liveImage = await request('tools/call', { name: 'capture', arguments: { deviceId: 'test-device' } });
+  assert.deepEqual(liveImage.result.content[0], { type: 'image', mimeType: 'image/jpeg', data: '/9j/' });
   await request('tools/call', { name: 'tap', arguments: { deviceId: 'test-device', x: 12, y: 24 } });
   assert.equal(taps, 1);
+  assert.deepEqual(JSON.parse((await request('tools/call', { name: 'preview_stop' })).result.content[0].text), { running: false, deviceId: 'test-device' });
   for (const args of [{ deviceId: 'test-device', x: -1, y: 24 }, { deviceId: 'test-device', x: '12', y: 24 }, null]) {
     assert.equal((await request('tools/call', { name: 'tap', arguments: args })).error.code, -32602);
   }

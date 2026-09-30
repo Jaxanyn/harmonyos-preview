@@ -44,6 +44,8 @@ MCP 工具：
 - `list_devices`：列出连接的鸿蒙设备
 - `capture`：返回设备截图
 - `tap`：点击设备坐标
+- `preview_start`：启动 MCP 内部实时截图轮询
+- `preview_stop`：停止 MCP 内部实时截图轮询
 - `build_run`：构建、安装并启动工程
 - `preview_info`：返回 Codex 浏览器中打开的实时预览地址
 
