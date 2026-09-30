@@ -1,111 +1,192 @@
 # harmonyos-preview
-面向 AI 编程 Agent 的 HarmonyOS 真机与模拟器实时预览及交互插件。
 
-CI 在 Windows runner 上使用 Node.js 20 和 22 执行完整检查，并验证本地 npm 安装包清单。
+面向 Codex 等 AI 编程 Agent 的 HarmonyOS 真机与模拟器预览插件。Agent 通过 MCP 调用构建、安装、启动、截图和触控操作，开发者可以在 Codex 中查看设备画面并继续交互。
 
-## 当前状态
+[![CI](https://github.com/Jaxanyn/harmonyos-preview/actions/workflows/ci.yml/badge.svg)](https://github.com/Jaxanyn/harmonyos-preview/actions/workflows/ci.yml)
+[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D20-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![MCP](https://img.shields.io/badge/MCP-stdio-5b5bd6)](https://modelcontextprotocol.io/)
 
-已完成真机预览原型：发现设备、构建安装启动、截图轮询、WebSocket 预览和点击操作。
+## 适用场景
 
-预览会话支持设备列表刷新和断线重试：设备暂时离线时保留会话，设备重新连接后自动恢复截图轮询；多个连接设备可在预览页下拉框中切换。
+当 Agent 需要确认 HarmonyOS 应用的实际画面或执行触控操作时，使用 `harmonyos-preview`：
 
-轮询间隔可通过 HARMONY_PREVIEW_POLL_MS 配置，最小为 100ms；相同截图不会重复发送，只发送 preview-tick 的 changed: false 状态。
+- 读取已连接的鸿蒙设备或模拟器。
+- 构建、安装并启动 HarmonyOS 应用。
+- 获取 MCP 图片格式的设备截图。
+- 在浏览器预览页面中持续查看设备画面。
+- 执行点击、滑动、长按、按键和文本输入。
+- 设备暂时断开后自动重试截图，重新连接后继续预览。
 
-本地服务默认只监听 127.0.0.1，HTTP/WebSocket 会拒绝非本机 Origin，请求体上限为 1 MiB；构建超时可通过 HARMONY_PREVIEW_BUILD_TIMEOUT_MS 配置，默认 5 分钟。
+## 工作方式
 
-## Agent 接口
-
-启动 Host 时设置 `HARMONY_PROJECT` 指向 HarmonyOS 工程：
-
-```powershell
-$env:HARMONY_PROJECT = 'C:\path\to\my-harmonyos-project'
-npm start
+```text
+Codex Agent
+    │ MCP stdio
+    ▼
+harmonyos-preview
+    │ HDC
+    ▼
+HarmonyOS 真机或模拟器
+    │ 截图轮询
+    ├── MCP 图片结果
+    └── WebSocket 浏览器预览页面
 ```
 
-Agent 可先读取 `GET /api/capabilities`，再使用：
+插件默认只监听本机地址。预览页面由 `preview_start` 返回，打开后会根据 `deviceId` 自动选择设备并开始轮询。
 
-- `GET /api/devices`：列出设备
-- `POST /api/capture`：请求体 `{ "deviceId": "..." }`，返回 Base64 JPEG
-- `POST /api/tap`：请求体 `{ "deviceId": "...", "x": 1, "y": 2 }`
-- WebSocket `/preview`：使用 `device-list`、`screenshot`、`tap`、`preview-start`、`preview-stop`、`build-run`
+## 前置条件
 
-## 插件入口
+1. Windows 和 Node.js 20 或更高版本。
+2. DevEco Studio 与 HDC。HDC 可通过 `PATH` 或 `HDC` 环境变量提供。
+3. 已开启 USB 调试并完成授权的 HarmonyOS 真机，或已启动的鸿蒙模拟器。
+4. 可以独立构建的 HarmonyOS 工程。项目需要提供 `build-local.ps1`，或能被 `devecocli` 构建，并设置正确的包名、Ability 和 HAP 输出路径。
 
-本地安装依赖后可通过 CLI 启动：
+确认 HDC 能发现设备：
 
 ```powershell
-node bin/harmonyos-preview.mjs --project 'C:\path\to\my-harmonyos-project'
+hdc list targets
 ```
 
-发布 npm 包后，入口命令名为 `harmonyos-preview`。
+## 在 Codex 中安装
 
-从 npm 安装：
+从源码目录执行安装脚本：
+
+```powershell
+cd "C:\path\to\harmonyos-preview"
+
+.\scripts\install-codex.ps1 `
+  -ProjectPath C:\path\to\my-harmonyos-project
+```
+
+脚本会检查 Node.js、HDC 和设备，并注册 `harmonyos-preview` MCP 服务。没有连接设备时会给出警告，但不会阻止注册；需要严格要求设备时加上 `-RequireDevice`。已有同名配置不会被覆盖，确认替换时使用 `-Force`。
+
+确认注册结果：
+
+```powershell
+codex mcp get harmonyos-preview
+```
+
+## 快速开始
+
+在 Codex 中发送：
+
+```text
+请使用 harmonyos-preview 启动 C:\path\to\my-harmonyos-project：
+
+1. 发现鸿蒙设备。
+2. 如果应用尚未安装，先构建、安装并启动。
+3. 启动实时预览并打开返回的 previewUrl。
+4. 保持预览运行，等待我下一步操作。
+```
+
+Agent 会按以下顺序调用工具：
+
+```text
+list_devices
+    → build_run（需要构建时）
+    → preview_start
+    → 打开 previewUrl
+    → capture / tap / swipe / input_text
+    → preview_stop
+```
+
+`preview_start` 返回带设备参数的 `previewUrl`。打开后，页面会自动请求设备列表、选择目标设备并启动浏览器轮询。页面支持直接点击和拖动，Agent 也可以根据 `capture` 返回的截图继续操作。
+
+## npm 安装
+
+发布 npm 包后，可以通过全局安装使用：
 
 ```powershell
 npm install --global harmonyos-preview --registry=https://registry.npmjs.org/
 harmonyos-preview --help
 ```
 
-生成本地安装包并安装：
+使用全局命令注册 Codex MCP：
+
+```powershell
+codex mcp add harmonyos-preview `
+  --env HARMONY_PROJECT=C:\path\to\my-harmonyos-project `
+  -- harmonyos-preview --mcp
+```
+
+也可以安装本地打包文件：
 
 ```powershell
 npm pack
 npm install --global .\harmonyos-preview-0.1.0.tgz
-harmonyos-preview --help
 ```
 
-`npm run package-check` 会检查安装包只包含运行所需的 README、CLI 和源码目录。
+## MCP 工具
 
-## MCP 接入
+| 工具 | 作用 |
+| --- | --- |
+| `list_devices` | 列出已连接的 HarmonyOS 设备。 |
+| `build_run` | 构建项目、安装 HAP 并启动应用。 |
+| `preview_start` | 启动截图轮询并返回预览会话。 |
+| `preview_info` | 返回预览地址、设备和会话状态。 |
+| `capture` | 返回 MCP 图片和截图元数据。 |
+| `tap` | 点击设备坐标。 |
+| `swipe` | 在两个坐标之间滑动。 |
+| `long_press` | 长按设备坐标。 |
+| `key_event` | 发送 `Back`、`Home` 或 `Power`。 |
+| `input_text` | 向焦点输入框或指定坐标输入文本。 |
+| `preview_stop` | 停止当前预览会话。 |
 
-支持 MCP 的 Agent 可通过 stdio 启动插件：
+stdio 模式只向 stdout 输出 JSON-RPC 消息，预览页面仍由本机 HTTP/WebSocket 服务承载。
+
+## 预览会话
+
+`preview_start` 在收到首帧后返回：
+
+- `sessionId`：当前预览会话编号。
+- `deviceId`：设备 ID。
+- `previewUrl`：带设备参数的浏览器预览地址。
+- `serverUrl`：预览服务根地址。
+- `wsUrl`：WebSocket 地址。
+- `pollMs`：截图轮询间隔。
+- `running` 和 `connected`：会话与设备截图状态。
+- `capabilities`：当前可用的 MCP 工具名。
+
+同一设备重复调用 `preview_start` 会复用活动会话。切换设备会关闭旧会话并创建新的 `sessionId`。调用 `preview_stop` 时传入原会话的 `sessionId`，可以避免旧指令停止新会话。
+
+设备暂时离线时，预览会话会保留并报告 `connected: false`。重新收到设备截图后，状态恢复为在线。离线期间的 `capture` 不会返回旧缓存帧。
+
+## 配置项
+
+| 环境变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `HARMONY_PROJECT` | 无 | HarmonyOS 工程路径。MCP 模式下必填。 |
+| `HDC` | `hdc` | HDC 可执行文件路径。 |
+| `HARMONY_PREVIEW_HOST` | `127.0.0.1` | 独立服务模式的 HTTP 监听地址。MCP 模式固定监听 `127.0.0.1`。 |
+| `HARMONY_PREVIEW_PORT` | `4100` | HTTP 服务端口。MCP 模式下可设为 `0` 自动分配。 |
+| `HARMONY_PREVIEW_POLL_MS` | `500` | 截图轮询间隔，最小 100 毫秒。 |
+| `HARMONY_PREVIEW_BUILD_TIMEOUT_MS` | `300000` | 构建超时时间，单位为毫秒。 |
+| `HARMONY_PREVIEW_ORIGIN` | 自动校验本机 Origin | 自定义允许的 HTTP/WebSocket Origin。 |
+
+## 独立启动预览页面
+
+不通过 MCP 时，可以直接启动本地服务：
 
 ```powershell
-codex mcp add harmonyos-preview --env HARMONY_PROJECT=C:\path\to\my-harmonyos-project -- node "C:\path\to\harmonyos-preview\bin\harmonyos-preview.mjs" --mcp
+$env:HARMONY_PROJECT = 'C:\path\to\my-harmonyos-project'
+node bin/harmonyos-preview.mjs --project 'C:\path\to\my-harmonyos-project'
 ```
 
-全局安装后可使用 npm 入口注册：
+打开以下地址，替换为实际设备 ID：
+
+```text
+http://127.0.0.1:4100/?deviceId=DEVICE_ID
+```
+
+服务启动后也可以检查健康状态：
 
 ```powershell
-codex mcp remove harmonyos-preview
-codex mcp add harmonyos-preview --env HARMONY_PROJECT=C:\path\to\my-harmonyos-project -- harmonyos-preview --mcp
+Invoke-RestMethod http://127.0.0.1:4100/health
 ```
 
-MCP 工具：
+## 真机验收
 
-- `list_devices`：列出连接的鸿蒙设备
-- `capture`：返回 MCP 图片内容；预览在线时复用最近一帧
-- `tap`：点击设备坐标
-- `swipe`：在两个坐标之间滑动
-- `long_press`：长按设备坐标
-- `key_event`：发送 Back、Home 或 Power
-- `input_text`：向焦点输入框或指定坐标输入文本
-- `preview_start`：启动 MCP 内部实时截图轮询；相同设备重复启动复用会话
-- `preview_stop`：停止 MCP 内部实时截图轮询，可传入 `sessionId` 防止停止新会话
-- `build_run`：构建、安装并启动工程
-- `preview_info`：返回预览地址、当前会话和设备连接状态
-
-stdio 模式只向 stdout 输出 JSON-RPC 消息，预览网页仍由本机 HTTP/WebSocket 服务承载。
-
-`preview_start` 在收到首帧后返回 `sessionId`、`deviceId`、`previewUrl`、`wsUrl`、`pollMs`、`running`、`connected` 和 `capabilities`。首帧等待超过 10 秒会返回工具错误并清理会话，检查设备连接后可重试。切换设备会关闭旧会话并创建新的会话编号。
-
-MCP 文本结果同时提供 `structuredContent`；截图结果提供图片内容和 `{ deviceId, live, sessionId }` 结构化元数据，Agent 不需要解析文本 JSON 才能识别当前设备和会话。
-
-`preview_info` 没有活动会话时返回 `running: false`，会话、设备和轮询间隔为 `null`。设备暂时离线时保留活动会话并返回 `connected: false`，`capture` 会尝试获取新截图，避免返回离线前的缓存图片。
-
-当前 `previewUrl` 指向带设备参数的独立浏览器预览页面。打开后会自动请求设备列表、选中目标设备并启动浏览器轮询；MCP 进程仍不会自行注入 Codex 固定侧边栏，宿主只需打开返回的 URL。
-
-Codex 工作流文件位于 `skills/harmonyos-preview-codex/SKILL.md`，完整安装和使用说明位于 `docs/codex-usage.md`。它们会随 npm 包一起提供；MCP 注册仍使用上面的 `codex mcp add` 命令。
-
-也可以使用安装脚本完成检查和注册：
-
-```powershell
-.\scripts\install-codex.ps1 -ProjectPath C:\path\to\my-harmonyos-project
-```
-
-`-CheckOnly` 只检查环境，`-RequireDevice` 要求至少发现一个 HDC 设备，`-Force` 替换已有同名 MCP 配置。脚本不会默认删除或覆盖现有 Codex 配置。
-
-可以用验收命令验证真实设备链路：
+该命令验证设备发现、MCP 启动、预览地址、截图和会话停止。默认不构建、不安装应用：
 
 ```powershell
 node scripts/check-codex.mjs `
@@ -113,13 +194,48 @@ node scripts/check-codex.mjs `
   --device DEVICE_ID
 ```
 
-该命令默认不构建、不安装；确认需要验证构建链路时再追加 `--build`。详细验收清单见 `docs/codex-acceptance.md`。
-
-## 开发
+需要验证构建、安装和启动时，在确认设备状态允许改变后追加 `--build`：
 
 ```powershell
-npm run check
-npm start
+node scripts/check-codex.mjs `
+  --project C:\path\to\my-harmonyos-project `
+  --device DEVICE_ID `
+  --build
 ```
 
-启动后访问 `http://127.0.0.1:4100/health`。
+## 故障排查
+
+**`hdc list targets` 没有设备**
+
+确认设备已连接、已开启 USB 调试并完成授权。模拟器需要先在 DevEco Studio 中启动。
+
+**`preview_start` 等待首帧超时**
+
+先调用 `list_devices`，确认目标设备仍在列表中。设备刚重连时，等待一轮截图后再调用 `capture`。
+
+**预览页面显示连接但没有设备画面**
+
+确认打开的是最新的 `previewUrl`，不要手动删除或修改其中的 `deviceId` 参数。
+
+**构建失败**
+
+检查 `HARMONY_PROJECT` 是否指向工程根目录，确认 `build-local.ps1` 或 `devecocli` 能够独立构建项目，并检查 HAP 输出路径和项目配置。
+
+## 开发与检查
+
+```powershell
+npm install
+npm run check
+npm pack --dry-run --registry=https://registry.npmjs.org/
+```
+
+真实设备验收清单见 [docs/codex-acceptance.md](docs/codex-acceptance.md)，Codex 工作流说明见 [docs/codex-usage.md](docs/codex-usage.md)。
+
+## 当前范围
+
+当前版本聚焦 Codex 的 MCP 接入和本地实时预览。预览画面通过返回的本地 URL 打开，暂不包含 Codex 固定原生侧边栏。插件核心使用 Node.js、MCP stdio、HDC、HTTP 和 WebSocket，不要求额外的桌面服务。
+
+## 相关项目
+
+- [dsh-android](https://github.com/ZSeven-W/dsh-android)，Android 真机和模拟器预览插件。
+- [mobilecode](https://github.com/hsandhu/mobilecode)，面向移动项目的 Agent 编程环境。
