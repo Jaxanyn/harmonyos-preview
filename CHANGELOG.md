@@ -9,6 +9,7 @@
 - Added the Codex workflow skill and installation/use guide.
 - Added the Windows Codex MCP installer with safe check-only, device requirement and replace modes.
 - Added device-aware preview URLs that auto-select the device and start browser polling.
+- Added a repeatable Codex real-device acceptance command and checklist.
 
 ## 0.1.0 - 2026-09-30
 

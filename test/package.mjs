@@ -16,7 +16,8 @@ const files = [
   'src/server.mjs',
   'docs/codex-usage.md',
   'skills/harmonyos-preview-codex/SKILL.md',
-  'scripts/install-codex.ps1'
+  'scripts/install-codex.ps1',
+  'scripts/check-codex.mjs'
 ];
 for (const file of files) assert.ok(existsSync(new URL('../' + file, import.meta.url)), file);
 assert.ok(!files.some((file) => file.startsWith('test/') || file.startsWith('.runtime/')));

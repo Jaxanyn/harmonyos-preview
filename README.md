@@ -91,6 +91,16 @@ Codex 工作流文件位于 `skills/harmonyos-preview-codex/SKILL.md`，完整�
 
 `-CheckOnly` 只检查环境，`-RequireDevice` 要求至少发现一个 HDC 设备，`-Force` 替换已有同名 MCP 配置。脚本不会默认删除或覆盖现有 Codex 配置。
 
+可以用验收命令验证真实设备链路：
+
+```powershell
+node scripts/check-codex.mjs `
+  --project C:\path\to\my-harmonyos-project `
+  --device DEVICE_ID
+```
+
+该命令默认不构建、不安装；确认需要验证构建链路时再追加 `--build`。详细验收清单见 `docs/codex-acceptance.md`。
+
 ## 开发
 
 ```powershell
