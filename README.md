@@ -1,6 +1,8 @@
 # harmonyos-preview
 面向 AI 编程 Agent 的 HarmonyOS 真机与模拟器实时预览及交互插件。
 
+CI 在 Windows runner 上使用 Node.js 20 和 22 执行完整检查，并验证本地 npm 安装包清单。
+
 ## 当前状态
 
 已完成真机预览原型：发现设备、构建安装启动、截图轮询、WebSocket 预览和点击操作。
