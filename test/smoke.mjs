@@ -4,6 +4,8 @@ import WebSocket from 'ws';
 import { createDeviceAdapter } from '../src/device.mjs';
 import { readProjectConfig } from '../src/project.mjs';
 import { access } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 
 const calls = [];
 const fakeDevice = createDeviceAdapter({ runtime: async (command, args) => {
@@ -29,8 +31,9 @@ for (const x of [-1, NaN, Infinity, '12']) {
 assert.equal(calls.length, 6, 'invalid coordinates must not reach hdc');
 const failingDevice = createDeviceAdapter({ runtime: async () => ({ code: 1, stdout: '', stderr: 'device disconnected' }) });
 await assert.rejects(failingDevice.tap({ deviceId: 'test-device', x: 12, y: 30 }), /device disconnected/);
-assert.deepEqual(readProjectConfig('C:/path/to/my-harmonyos-project'), {
-  projectPath: 'C:/path/to/my-harmonyos-project', moduleName: 'entry', bundleName: 'com.example.preview', ability: 'EntryAbility'
+const fixtureProject = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'minimal-project');
+assert.deepEqual(readProjectConfig(fixtureProject), {
+  projectPath: fixtureProject, moduleName: 'entry', bundleName: 'com.example.preview', ability: 'EntryAbility'
 });
 await access(new URL('../bin/harmonyos-preview.mjs', import.meta.url));
 

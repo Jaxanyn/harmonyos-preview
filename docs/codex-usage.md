@@ -32,7 +32,7 @@ codex mcp add harmonyos-preview `
 推荐提示词：
 
 ```text
-启动 HarmonyOS project，打开鸿蒙真机实时预览，点击主操作按钮并确认画面变化。
+启动 HarmonyOS 项目，打开鸿蒙真机实时预览，点击主操作按钮并确认画面变化。
 ```
 
 ## 返回结果
