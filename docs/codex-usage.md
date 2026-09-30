@@ -2,6 +2,14 @@
 
 ## 安装 MCP
 
+推荐先使用安装脚本：
+
+```powershell
+.\scripts\install-codex.ps1 -ProjectPath C:\path\to\my-harmonyos-project
+```
+
+脚本会检查 Node.js、HDC 和设备，并注册 `harmonyos-preview`。没有连接设备时只给出警告；需要严格要求设备时加上 `-RequireDevice`。已有同名配置不会覆盖，确认替换时使用 `-Force`。
+
 在 PowerShell 中注册本地插件：
 
 ```powershell

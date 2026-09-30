@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 
 const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url)));
-assert.deepEqual(packageJson.files, ['README.md', 'bin', 'src', 'docs', 'skills']);
+assert.deepEqual(packageJson.files, ['README.md', 'bin', 'src', 'docs', 'skills', 'scripts']);
 assert.equal(packageJson.bin['harmonyos-preview'], 'bin/harmonyos-preview.mjs');
 
 const files = [
@@ -15,7 +15,8 @@ const files = [
   'src/project.mjs',
   'src/server.mjs',
   'docs/codex-usage.md',
-  'skills/harmonyos-preview-codex/SKILL.md'
+  'skills/harmonyos-preview-codex/SKILL.md',
+  'scripts/install-codex.ps1'
 ];
 for (const file of files) assert.ok(existsSync(new URL('../' + file, import.meta.url)), file);
 assert.ok(!files.some((file) => file.startsWith('test/') || file.startsWith('.runtime/')));

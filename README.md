@@ -83,6 +83,14 @@ MCP 文本结果同时提供 `structuredContent`；截图结果提供图片内�
 
 Codex 工作流文件位于 `skills/harmonyos-preview-codex/SKILL.md`，完整安装和使用说明位于 `docs/codex-usage.md`。它们会随 npm 包一起提供；MCP 注册仍使用上面的 `codex mcp add` 命令。
 
+也可以使用安装脚本完成检查和注册：
+
+```powershell
+.\scripts\install-codex.ps1 -ProjectPath C:\path\to\my-harmonyos-project
+```
+
+`-CheckOnly` 只检查环境，`-RequireDevice` 要求至少发现一个 HDC 设备，`-Force` 替换已有同名 MCP 配置。脚本不会默认删除或覆盖现有 Codex 配置。
+
 ## 开发
 
 ```powershell
