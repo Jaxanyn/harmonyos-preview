@@ -121,4 +121,37 @@ try {
   await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
 }
 
+let reconnectCaptures = 0;
+const reconnectDevice = {
+  listTargets: async () => reconnectCaptures < 2 ? [] : ['test-device'],
+  capture: async () => {
+    reconnectCaptures += 1;
+    if (reconnectCaptures === 1) throw new Error('device disconnected');
+    return { mimeType: 'image/jpeg', data: Buffer.from('reconnected-frame') };
+  },
+  tap: sessionDevice.tap,
+  swipe: sessionDevice.swipe,
+  longPress: sessionDevice.longPress,
+  keyEvent: sessionDevice.keyEvent,
+  inputText: sessionDevice.inputText
+};
+const reconnectServer = createPreviewServer({ deviceAdapter: reconnectDevice });
+await new Promise((resolve) => reconnectServer.listen(0, '127.0.0.1', resolve));
+const reconnectSocket = new WebSocket('ws://127.0.0.1:' + reconnectServer.address().port + '/preview');
+const reconnectMessages = [];
+reconnectSocket.on('message', (message) => reconnectMessages.push(message));
+await new Promise((resolve, reject) => {
+  reconnectSocket.once('open', resolve);
+  reconnectSocket.once('error', reject);
+});
+reconnectSocket.send(JSON.stringify({ type: 'preview-start', deviceId: 'test-device' }));
+await new Promise((resolve) => setTimeout(resolve, 750));
+const reconnectEvents = reconnectMessages.filter((message) => message[0] === 0x7b).map((message) => JSON.parse(message.toString()));
+assert.ok(reconnectEvents.some((event) => event.type === 'preview-status' && event.reason === 'device-disconnected'));
+assert.ok(reconnectEvents.some((event) => event.type === 'devices' && event.devices.length === 0));
+assert.ok(reconnectEvents.some((event) => event.type === 'preview-status' && event.running && event.reconnecting === false));
+assert.ok(reconnectMessages.some((message) => message.toString() === 'reconnected-frame'));
+reconnectSocket.terminate();
+await reconnectServer.shutdown();
+
 console.log('smoke: ok');

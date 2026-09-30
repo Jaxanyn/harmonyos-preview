@@ -23,7 +23,7 @@ socket.binaryType='blob';
 socket.onopen=()=>status.textContent='Connected';
 socket.onclose=()=>status.textContent='Disconnected';
 socket.onerror=()=>status.textContent='Connection error';
-socket.onmessage=event=>{if(typeof event.data==='string'){const message=JSON.parse(event.data);if(message.type==='status'||message.type==='run-status')status.textContent=message.text;if(message.type==='frame-meta'){frameMime=message.mimeType;nextFrameDeviceId=message.deviceId??'';}if(message.type==='devices'){devices.replaceChildren(...message.devices.map(id=>new Option(id,id)));deviceId=message.devices[0]??'';if(!deviceId)status.textContent='No device connected';}if(message.type==='tap-ack'||message.type==='swipe-ack'||message.type==='long-press-ack'||message.type==='key-event-ack'||message.type==='input-text-ack'){tapPending=false;status.textContent=message.type.replace('-ack','')+' complete';}if(message.type==='preview-status')status.textContent=message.running?'Preview running':'Preview stopped';if(message.type==='error'){tapPending=false;status.textContent=message.error;}return;}const old=stage.src;const sourceDeviceId=nextFrameDeviceId;stage.onload=()=>{frameDeviceId=sourceDeviceId;if(old.startsWith('blob:'))URL.revokeObjectURL(old)};stage.src=URL.createObjectURL(new Blob([event.data],{type:frameMime}))};
+socket.onmessage=event=>{if(typeof event.data==='string'){const message=JSON.parse(event.data);if(message.type==='status'||message.type==='run-status')status.textContent=message.text;if(message.type==='frame-meta'){frameMime=message.mimeType;nextFrameDeviceId=message.deviceId??'';}if(message.type==='devices'){const previous=deviceId;devices.replaceChildren(...message.devices.map(id=>new Option(id,id)));deviceId=message.devices.includes(previous)?previous:(message.devices[0]??'');devices.value=deviceId;if(!deviceId)status.textContent='No device connected';}if(message.type==='tap-ack'||message.type==='swipe-ack'||message.type==='long-press-ack'||message.type==='key-event-ack'||message.type==='input-text-ack'){tapPending=false;status.textContent=message.type.replace('-ack','')+' complete';}if(message.type==='preview-status')status.textContent=message.running?(message.reconnecting?'Reconnecting':'Preview running'):(message.reason==='device-disconnected'?'Device disconnected; retrying':'Preview stopped');if(message.type==='error'){tapPending=false;status.textContent=message.error;}return;}const old=stage.src;const sourceDeviceId=nextFrameDeviceId;stage.onload=()=>{frameDeviceId=sourceDeviceId;if(old.startsWith('blob:'))URL.revokeObjectURL(old)};stage.src=URL.createObjectURL(new Blob([event.data],{type:frameMime}))};
 document.querySelector('#refresh').onclick=()=>socket.send(JSON.stringify({type:'device-list'}));document.querySelector('#build').onclick=()=>{if(deviceId)socket.send(JSON.stringify({type:'build-run',deviceId}));};document.querySelector('#shot').onclick=()=>{if(deviceId)socket.send(JSON.stringify({type:'screenshot',deviceId}));};document.querySelector('#start').onclick=()=>{if(deviceId)socket.send(JSON.stringify({type:'preview-start',deviceId}));};document.querySelector('#stop').onclick=()=>socket.send(JSON.stringify({type:'preview-stop'}));devices.onchange=()=>{deviceId=devices.value;frameDeviceId='';socket.send(JSON.stringify({type:'preview-stop'}));};
 let gestureStart,longTimer,longFired=false;
 const point=event=>{const box=stage.getBoundingClientRect();return {x:Math.min(stage.naturalWidth-1,Math.max(0,Math.round((event.clientX-box.left)*stage.naturalWidth/box.width))),y:Math.min(stage.naturalHeight-1,Math.max(0,Math.round((event.clientY-box.top)*stage.naturalHeight/box.height)))}};
@@ -185,15 +185,25 @@ function sendFrame(socket, frame, deviceId) {
 
 function startPolling(socket, deviceAdapter, sessions, deviceId) {
   stopPolling(socket, sessions);
-  const session = { stopped: false, timer: null };
+  const session = { stopped: false, timer: null, connected: true };
   sessions.set(socket, session);
   const poll = async () => {
     if (session.stopped || socket.readyState !== 1) return;
     try {
       sendFrame(socket, await deviceAdapter.capture({ deviceId }), deviceId);
+      if (!session.connected) {
+        session.connected = true;
+        socket.send(JSON.stringify({ type: 'preview-status', running: true, deviceId, reconnecting: false }));
+      }
       socket.send(JSON.stringify({ type: 'preview-tick', at: Date.now() }));
     } catch (error) {
-      socket.send(JSON.stringify({ type: 'error', error: error.message }));
+      if (session.connected) {
+        session.connected = false;
+        socket.send(JSON.stringify({ type: 'preview-status', running: false, deviceId, reason: 'device-disconnected' }));
+      }
+      const devices = await deviceAdapter.listTargets().catch(() => []);
+      socket.send(JSON.stringify({ type: 'devices', devices }));
+      if (devices.includes(deviceId)) session.connected = true;
     }
     if (!session.stopped) session.timer = setTimeout(poll, pollMs);
   };
