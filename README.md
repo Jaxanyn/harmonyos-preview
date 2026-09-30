@@ -36,7 +36,7 @@ node bin/harmonyos-preview.mjs --project 'C:\path\to\my-harmonyos-project'
 支持 MCP 的 Agent 可通过 stdio 启动插件：
 
 ```powershell
-codex mcp add harmonyos-preview --env HARMONY_PROJECT=C:\path\to\my-harmonyos-project -- node C:\path\to\harmonyos-preview\bin\harmonyos-preview.mjs --mcp
+codex mcp add harmonyos-preview --env HARMONY_PROJECT=C:\path\to\my-harmonyos-project -- node "C:\path\to\harmonyos-preview\bin\harmonyos-preview.mjs" --mcp
 ```
 
 MCP 工具：
