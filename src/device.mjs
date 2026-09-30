@@ -41,7 +41,7 @@ export function createDeviceAdapter({ command = process.env.HDC ?? 'hdc', runtim
 
   async function tap({ deviceId, x, y } = {}) {
     if (!deviceId) throw new Error('deviceId is required');
-    if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('x and y must be numbers');
+    if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0) throw new Error('x and y must be non-negative finite numbers');
     const result = await hdc(['-t', deviceId, 'shell', 'uitest', 'uiInput', 'click', String(Math.round(x)), String(Math.round(y))]);
     if (result.code !== 0) throw new Error(result.stderr.trim() || 'device tap failed');
     return { deviceId, x: Math.round(x), y: Math.round(y) };

@@ -18,15 +18,15 @@ const previewPage = `<!doctype html>
   main{display:grid;place-items:center;min-width:0;padding:24px}#stage{max-width:100%;max-height:calc(100vh - 48px);background:#000;box-shadow:0 16px 50px #0009;cursor:crosshair}
 </style></head><body><aside><h1>HarmonyOS Preview</h1><p id="status">Connecting…</p><select id="devices"><option value="">No device selected</option></select><button id="refresh">Refresh devices</button><button id="build">Build · Install · Run</button><button id="shot">Capture screenshot</button><button id="start">Start preview</button><button id="stop">Stop preview</button><p>Device frame polling</p></aside><main><img id="stage" alt="HarmonyOS preview frame"></main>
 <script>
-const stage=document.querySelector('#stage');const status=document.querySelector('#status');const devices=document.querySelector('#devices');let deviceId='';
+const stage=document.querySelector('#stage');const status=document.querySelector('#status');const devices=document.querySelector('#devices');let deviceId='',frameDeviceId='',nextFrameDeviceId='',tapPending=false;
 const socket=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/preview');let frameMime='image/png';
 socket.binaryType='blob';
 socket.onopen=()=>status.textContent='Connected';
 socket.onclose=()=>status.textContent='Disconnected';
 socket.onerror=()=>status.textContent='Connection error';
-socket.onmessage=event=>{if(typeof event.data==='string'){const message=JSON.parse(event.data);if(message.type==='status'||message.type==='run-status')status.textContent=message.text;if(message.type==='frame-meta')frameMime=message.mimeType;if(message.type==='devices'){devices.replaceChildren(...message.devices.map(id=>new Option(id,id)));deviceId=message.devices[0]??'';if(!deviceId)status.textContent='No device connected';}if(message.type==='tap-ack')status.textContent='Tapped '+message.x+','+message.y;if(message.type==='preview-status')status.textContent=message.running?'Preview running':'Preview stopped';if(message.type==='error')status.textContent=message.error;return;}const old=stage.src;stage.onload=()=>{if(old.startsWith('blob:'))URL.revokeObjectURL(old)};stage.src=URL.createObjectURL(new Blob([event.data],{type:frameMime}))};
-document.querySelector('#refresh').onclick=()=>socket.send(JSON.stringify({type:'device-list'}));document.querySelector('#build').onclick=()=>{if(deviceId)socket.send(JSON.stringify({type:'build-run',deviceId}));};document.querySelector('#shot').onclick=()=>{if(deviceId)socket.send(JSON.stringify({type:'screenshot',deviceId}));};document.querySelector('#start').onclick=()=>{if(deviceId)socket.send(JSON.stringify({type:'preview-start',deviceId}));};document.querySelector('#stop').onclick=()=>socket.send(JSON.stringify({type:'preview-stop'}));devices.onchange=()=>{deviceId=devices.value};
-stage.onclick=event=>{if(!deviceId){status.textContent='Select a device first';return;}const box=stage.getBoundingClientRect();const x=(event.clientX-box.left)*stage.naturalWidth/box.width;const y=(event.clientY-box.top)*stage.naturalHeight/box.height;socket.send(JSON.stringify({type:'tap',deviceId,x:Math.round(x),y:Math.round(y)}))};
+socket.onmessage=event=>{if(typeof event.data==='string'){const message=JSON.parse(event.data);if(message.type==='status'||message.type==='run-status')status.textContent=message.text;if(message.type==='frame-meta'){frameMime=message.mimeType;nextFrameDeviceId=message.deviceId??'';}if(message.type==='devices'){devices.replaceChildren(...message.devices.map(id=>new Option(id,id)));deviceId=message.devices[0]??'';if(!deviceId)status.textContent='No device connected';}if(message.type==='tap-ack'){tapPending=false;status.textContent='Tapped '+message.x+','+message.y;}if(message.type==='preview-status')status.textContent=message.running?'Preview running':'Preview stopped';if(message.type==='error'){tapPending=false;status.textContent=message.error;}return;}const old=stage.src;const sourceDeviceId=nextFrameDeviceId;stage.onload=()=>{frameDeviceId=sourceDeviceId;if(old.startsWith('blob:'))URL.revokeObjectURL(old)};stage.src=URL.createObjectURL(new Blob([event.data],{type:frameMime}))};
+document.querySelector('#refresh').onclick=()=>socket.send(JSON.stringify({type:'device-list'}));document.querySelector('#build').onclick=()=>{if(deviceId)socket.send(JSON.stringify({type:'build-run',deviceId}));};document.querySelector('#shot').onclick=()=>{if(deviceId)socket.send(JSON.stringify({type:'screenshot',deviceId}));};document.querySelector('#start').onclick=()=>{if(deviceId)socket.send(JSON.stringify({type:'preview-start',deviceId}));};document.querySelector('#stop').onclick=()=>socket.send(JSON.stringify({type:'preview-stop'}));devices.onchange=()=>{deviceId=devices.value;frameDeviceId='';socket.send(JSON.stringify({type:'preview-stop'}));};
+stage.onclick=event=>{if(!deviceId||frameDeviceId!==deviceId){status.textContent='Capture or start preview for the selected device first';return;}if(tapPending||socket.readyState!==WebSocket.OPEN)return;const box=stage.getBoundingClientRect();const x=Math.min(stage.naturalWidth-1,Math.max(0,Math.round((event.clientX-box.left)*stage.naturalWidth/box.width)));const y=Math.min(stage.naturalHeight-1,Math.max(0,Math.round((event.clientY-box.top)*stage.naturalHeight/box.height)));tapPending=true;status.textContent='Tapping '+x+','+y;socket.send(JSON.stringify({type:'tap',deviceId,x,y}))};
 </script></body></html>`;
 
 const staticFrame = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920"><rect width="1080" height="1920" fill="#10151c"/><rect x="48" y="70" width="984" height="1780" rx="42" fill="#1b2430"/><text x="540" y="850" text-anchor="middle" fill="#f4f6fa" font-size="56" font-family="system-ui">HarmonyOS Preview</text><text x="540" y="940" text-anchor="middle" fill="#9eabbc" font-size="34" font-family="system-ui">Static frame</text><circle cx="540" cy="1070" r="54" fill="#4f7cff"/></svg>`);
@@ -101,7 +101,7 @@ async function handleSocketMessage(socket, deviceAdapter, sessions, message) {
   }
   if (action.type === 'screenshot') {
     const frame = await deviceAdapter.capture(action);
-    sendFrame(socket, frame);
+    sendFrame(socket, frame, action.deviceId);
     return;
   }
   if (action.type === 'preview-start') {
@@ -116,9 +116,9 @@ async function handleSocketMessage(socket, deviceAdapter, sessions, message) {
   }
 }
 
-function sendFrame(socket, frame) {
+function sendFrame(socket, frame, deviceId) {
   if (socket.readyState !== 1) return;
-  socket.send(JSON.stringify({ type: 'frame-meta', mimeType: frame.mimeType }));
+  socket.send(JSON.stringify({ type: 'frame-meta', mimeType: frame.mimeType, deviceId }));
   socket.send(frame.data);
 }
 
@@ -129,7 +129,7 @@ function startPolling(socket, deviceAdapter, sessions, deviceId) {
   const poll = async () => {
     if (session.stopped || socket.readyState !== 1) return;
     try {
-      sendFrame(socket, await deviceAdapter.capture({ deviceId }));
+      sendFrame(socket, await deviceAdapter.capture({ deviceId }), deviceId);
       socket.send(JSON.stringify({ type: 'preview-tick', at: Date.now() }));
     } catch (error) {
       socket.send(JSON.stringify({ type: 'error', error: error.message }));

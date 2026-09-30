@@ -13,6 +13,13 @@ const fakeDevice = createDeviceAdapter({ runtime: async (command, args) => {
 assert.deepEqual(await fakeDevice.listTargets(), ['test-device']);
 assert.deepEqual(await fakeDevice.tap({ deviceId: 'test-device', x: 12.4, y: 30.6 }), { deviceId: 'test-device', x: 12, y: 31 });
 assert.equal(calls.length, 2);
+assert.deepEqual(calls[1].args, ['-t', 'test-device', 'shell', 'uitest', 'uiInput', 'click', '12', '31']);
+for (const x of [-1, NaN, Infinity, '12']) {
+  await assert.rejects(fakeDevice.tap({ deviceId: 'test-device', x, y: 30 }), /non-negative finite/);
+}
+assert.equal(calls.length, 2, 'invalid coordinates must not reach hdc');
+const failingDevice = createDeviceAdapter({ runtime: async () => ({ code: 1, stdout: '', stderr: 'device disconnected' }) });
+await assert.rejects(failingDevice.tap({ deviceId: 'test-device', x: 12, y: 30 }), /device disconnected/);
 assert.deepEqual(readProjectConfig('C:/path/to/my-harmonyos-project'), {
   projectPath: 'C:/path/to/my-harmonyos-project', moduleName: 'entry', bundleName: 'com.example.preview', ability: 'EntryAbility'
 });
@@ -20,7 +27,7 @@ assert.deepEqual(readProjectConfig('C:/path/to/my-harmonyos-project'), {
 let captured = 0;
 const sessionDevice = {
   listTargets: async () => ['test-device'],
-  tap: async (action) => ({ deviceId: action.deviceId, x: action.x, y: action.y }),
+  tap: fakeDevice.tap,
   install: async () => ({}),
   launch: async () => ({}),
   capture: async () => { captured += 1; return { mimeType: 'image/jpeg', data: Buffer.from('frame') }; }
@@ -54,12 +61,22 @@ try {
   assert.equal(JSON.parse(messages[0].toString()).type, 'status');
   assert.deepEqual(JSON.parse(messages[1].toString()), { type: 'frame-meta', mimeType: 'image/svg+xml', width: 1080, height: 1920 });
   assert.equal(messages[2][0], 0x3c);
-  socket.send(JSON.stringify({ type: 'tap', deviceId: 'test-device', x: 120, y: 240 }));
   const tapAck = await new Promise((resolve, reject) => {
     socket.once('message', resolve);
     socket.once('error', reject);
+    socket.send(JSON.stringify({ type: 'tap', deviceId: 'test-device', x: 120, y: 240 }));
   });
   assert.deepEqual(JSON.parse(tapAck.toString()), { type: 'tap-ack', deviceId: 'test-device', x: 120, y: 240 });
+  const invalidTap = await new Promise((resolve) => {
+    socket.once('message', resolve);
+    socket.send(JSON.stringify({ type: 'tap', deviceId: 'test-device', x: -1, y: 240 }));
+  });
+  assert.match(JSON.parse(invalidTap.toString()).error, /non-negative finite/);
+  const screenshot = await new Promise((resolve) => {
+    socket.once('message', resolve);
+    socket.send(JSON.stringify({ type: 'screenshot', deviceId: 'test-device' }));
+  });
+  assert.deepEqual(JSON.parse(screenshot.toString()), { type: 'frame-meta', mimeType: 'image/jpeg', deviceId: 'test-device' });
 
   socket.send(JSON.stringify({ type: 'preview-start', deviceId: 'test-device' }));
   await new Promise((resolve) => setTimeout(resolve, 650));
