@@ -16,7 +16,11 @@ const running = startMcp({ input, output, port: 0, projectPath: '', deviceAdapte
     if (deviceId === 'disconnected') throw new Error('device disconnected');
     return { mimeType: 'image/jpeg', data: Buffer.from([0xff, 0xd8, 0xff]) };
   },
-  tap: async (args) => { taps += 1; return args; }
+  tap: async (args) => { taps += 1; return args; },
+  swipe: async (args) => args,
+  longPress: async (args) => args,
+  keyEvent: async (args) => args,
+  inputText: async (args) => args
 } });
 let id = 0;
 async function request(method, params) {
@@ -36,7 +40,7 @@ try {
   assert.deepEqual(initialized.result.capabilities, { tools: {} });
   input.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
   const listed = await request('tools/list');
-  assert.deepEqual(listed.result.tools.map((tool) => tool.name), ['list_devices', 'capture', 'tap', 'preview_start', 'preview_stop', 'build_run', 'preview_info']);
+  assert.deepEqual(listed.result.tools.map((tool) => tool.name), ['list_devices', 'capture', 'tap', 'swipe', 'long_press', 'key_event', 'input_text', 'preview_start', 'preview_stop', 'build_run', 'preview_info']);
   assert.deepEqual((await request('ping')).result, {});
   const devices = await request('tools/call', { name: 'list_devices' });
   assert.deepEqual(JSON.parse(devices.result.content[0].text), { devices: ['test-device'] });
@@ -46,6 +50,10 @@ try {
   assert.equal(JSON.parse(previewStarted.result.content[0].text).deviceId, 'test-device');
   const liveImage = await request('tools/call', { name: 'capture', arguments: { deviceId: 'test-device' } });
   assert.deepEqual(liveImage.result.content[0], { type: 'image', mimeType: 'image/jpeg', data: '/9j/' });
+  assert.deepEqual(JSON.parse((await request('tools/call', { name: 'swipe', arguments: { deviceId: 'test-device', fromX: 1, fromY: 2, toX: 3, toY: 4 } })).result.content[0].text).toX, 3);
+  assert.deepEqual(JSON.parse((await request('tools/call', { name: 'long_press', arguments: { deviceId: 'test-device', x: 1, y: 2 } })).result.content[0].text).x, 1);
+  assert.deepEqual(JSON.parse((await request('tools/call', { name: 'key_event', arguments: { deviceId: 'test-device', key: 'Back' } })).result.content[0].text).key, 'Back');
+  assert.deepEqual(JSON.parse((await request('tools/call', { name: 'input_text', arguments: { deviceId: 'test-device', text: 'hello' } })).result.content[0].text).text, 'hello');
   await request('tools/call', { name: 'tap', arguments: { deviceId: 'test-device', x: 12, y: 24 } });
   assert.equal(taps, 1);
   assert.deepEqual(JSON.parse((await request('tools/call', { name: 'preview_stop' })).result.content[0].text), { running: false, deviceId: 'test-device' });

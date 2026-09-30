@@ -58,7 +58,47 @@ export function createDeviceAdapter({ command = process.env.HDC ?? 'hdc', runtim
     return { deviceId, x: Math.round(x), y: Math.round(y) };
   }
 
-  return { listTargets, capture, install, launch, tap };
+  async function swipe({ deviceId, fromX, fromY, toX, toY, velocity = 600 } = {}) {
+    const points = [fromX, fromY, toX, toY];
+    if (!deviceId) throw new Error('deviceId is required');
+    if (points.some((point) => !Number.isFinite(point) || point < 0)) throw new Error('swipe coordinates must be non-negative finite numbers');
+    if (!Number.isInteger(velocity) || velocity < 200 || velocity > 40000) throw new Error('velocity must be an integer from 200 to 40000');
+    const result = await hdc(['-t', deviceId, 'shell', 'uitest', 'uiInput', 'swipe',
+      ...points.map((point) => String(Math.round(point))), String(velocity)]);
+    if (result.code !== 0) throw new Error(result.stderr.trim() || 'device swipe failed');
+    return { deviceId, fromX: Math.round(fromX), fromY: Math.round(fromY), toX: Math.round(toX), toY: Math.round(toY), velocity };
+  }
+
+  async function longPress({ deviceId, x, y } = {}) {
+    if (!deviceId) throw new Error('deviceId is required');
+    if (![x, y].every((point) => Number.isFinite(point) && point >= 0)) throw new Error('long press coordinates must be non-negative finite numbers');
+    const result = await hdc(['-t', deviceId, 'shell', 'uitest', 'uiInput', 'longClick', String(Math.round(x)), String(Math.round(y))]);
+    if (result.code !== 0) throw new Error(result.stderr.trim() || 'device long press failed');
+    return { deviceId, x: Math.round(x), y: Math.round(y) };
+  }
+
+  async function keyEvent({ deviceId, key = 'Back' } = {}) {
+    if (!deviceId) throw new Error('deviceId is required');
+    if (!['Back', 'Home', 'Power'].includes(key)) throw new Error('key must be Back, Home or Power');
+    const result = await hdc(['-t', deviceId, 'shell', 'uitest', 'uiInput', 'keyEvent', key]);
+    if (result.code !== 0) throw new Error(result.stderr.trim() || 'device key event failed');
+    return { deviceId, key };
+  }
+
+  async function inputText({ deviceId, text, x, y } = {}) {
+    if (!deviceId) throw new Error('deviceId is required');
+    if (typeof text !== 'string' || !text) throw new Error('text must be a non-empty string');
+    const hasPoint = x !== undefined || y !== undefined;
+    if (hasPoint && ![x, y].every((point) => Number.isFinite(point) && point >= 0)) throw new Error('input coordinates must be provided together');
+    const args = hasPoint
+      ? ['inputText', String(Math.round(x)), String(Math.round(y)), text]
+      : ['text', text];
+    const result = await hdc(['-t', deviceId, 'shell', 'uitest', 'uiInput', ...args]);
+    if (result.code !== 0) throw new Error(result.stderr.trim() || 'device text input failed');
+    return { deviceId, text, ...(hasPoint ? { x: Math.round(x), y: Math.round(y) } : {}) };
+  }
+
+  return { listTargets, capture, install, launch, tap, swipe, longPress, keyEvent, inputText };
 }
 
 function runCommand(command, args) {

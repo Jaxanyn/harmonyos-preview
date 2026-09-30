@@ -9,6 +9,10 @@ const tools = [
   { name: 'list_devices', description: 'List connected HarmonyOS devices and emulators.', properties: {}, required: [] },
   { name: 'capture', description: 'Return the selected device screenshot as an MCP image.', properties: { deviceId: device }, required: ['deviceId'] },
   { name: 'tap', description: 'Click the device at screenshot pixel coordinates. Changes device UI state.', properties: { deviceId: device, x: { type: 'number', minimum: 0 }, y: { type: 'number', minimum: 0 } }, required: ['deviceId', 'x', 'y'] },
+  { name: 'swipe', description: 'Swipe between two screenshot pixel coordinates. Changes device UI state.', properties: { deviceId: device, fromX: { type: 'number', minimum: 0 }, fromY: { type: 'number', minimum: 0 }, toX: { type: 'number', minimum: 0 }, toY: { type: 'number', minimum: 0 }, velocity: { type: 'number', minimum: 200, maximum: 40000 } }, required: ['deviceId', 'fromX', 'fromY', 'toX', 'toY'] },
+  { name: 'long_press', description: 'Long press a screenshot pixel coordinate. Changes device UI state.', properties: { deviceId: device, x: { type: 'number', minimum: 0 }, y: { type: 'number', minimum: 0 } }, required: ['deviceId', 'x', 'y'] },
+  { name: 'key_event', description: 'Send Back, Home or Power to the device. Changes device UI state.', properties: { deviceId: device, key: { type: 'string', enum: ['Back', 'Home', 'Power'] } }, required: ['deviceId'] },
+  { name: 'input_text', description: 'Input text at the focused field or a coordinate. Changes device UI state.', properties: { deviceId: device, text: { type: 'string', minLength: 1 }, x: { type: 'number', minimum: 0 }, y: { type: 'number', minimum: 0 } }, required: ['deviceId', 'text'] },
   { name: 'preview_start', description: 'Start live screenshot polling and return the preview URL.', properties: { deviceId: device }, required: ['deviceId'] },
   { name: 'preview_stop', description: 'Stop live screenshot polling.', properties: {}, required: [] },
   { name: 'build_run', description: 'Build the configured project, install its HAP and launch it. Changes device state; requires user authorization.', properties: { deviceId: device }, required: ['deviceId'] },
@@ -74,6 +78,10 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
       if (tool.name === 'list_devices') return textResult({ devices: await deviceAdapter.listTargets() });
       if (tool.name === 'preview_info') return textResult({ previewUrl, projectPath: projectPath ?? null });
       if (tool.name === 'tap') return textResult(await deviceAdapter.tap(args));
+      if (tool.name === 'swipe') return textResult(await deviceAdapter.swipe(args));
+      if (tool.name === 'long_press') return textResult(await deviceAdapter.longPress(args));
+      if (tool.name === 'key_event') return textResult(await deviceAdapter.keyEvent(args));
+      if (tool.name === 'input_text') return textResult(await deviceAdapter.inputText(args));
       if (tool.name === 'build_run') return textResult(await buildAndRun(deviceAdapter, { projectPath, deviceId: args.deviceId }));
       if (tool.name === 'preview_start') return textResult(await startLivePreview(args.deviceId));
       if (tool.name === 'preview_stop') return textResult(await stopLivePreview());
@@ -129,7 +137,7 @@ function validateArguments(schema, args) {
   for (const [key, value] of Object.entries(args)) {
     const property = schema.properties[key];
     if (!property || typeof value !== property.type) fail();
-    if (property.type === 'string' && !value.trim()) fail();
-    if (property.type === 'number' && (!Number.isFinite(value) || value < property.minimum)) fail();
+    if (property.type === 'string' && (!value.trim() || value.length < (property.minLength ?? 0) || property.enum && !property.enum.includes(value))) fail();
+    if (property.type === 'number' && (!Number.isFinite(value) || value < property.minimum || value > (property.maximum ?? Infinity))) fail();
   }
 }

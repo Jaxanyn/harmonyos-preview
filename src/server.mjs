@@ -23,9 +23,14 @@ socket.binaryType='blob';
 socket.onopen=()=>status.textContent='Connected';
 socket.onclose=()=>status.textContent='Disconnected';
 socket.onerror=()=>status.textContent='Connection error';
-socket.onmessage=event=>{if(typeof event.data==='string'){const message=JSON.parse(event.data);if(message.type==='status'||message.type==='run-status')status.textContent=message.text;if(message.type==='frame-meta'){frameMime=message.mimeType;nextFrameDeviceId=message.deviceId??'';}if(message.type==='devices'){devices.replaceChildren(...message.devices.map(id=>new Option(id,id)));deviceId=message.devices[0]??'';if(!deviceId)status.textContent='No device connected';}if(message.type==='tap-ack'){tapPending=false;status.textContent='Tapped '+message.x+','+message.y;}if(message.type==='preview-status')status.textContent=message.running?'Preview running':'Preview stopped';if(message.type==='error'){tapPending=false;status.textContent=message.error;}return;}const old=stage.src;const sourceDeviceId=nextFrameDeviceId;stage.onload=()=>{frameDeviceId=sourceDeviceId;if(old.startsWith('blob:'))URL.revokeObjectURL(old)};stage.src=URL.createObjectURL(new Blob([event.data],{type:frameMime}))};
+socket.onmessage=event=>{if(typeof event.data==='string'){const message=JSON.parse(event.data);if(message.type==='status'||message.type==='run-status')status.textContent=message.text;if(message.type==='frame-meta'){frameMime=message.mimeType;nextFrameDeviceId=message.deviceId??'';}if(message.type==='devices'){devices.replaceChildren(...message.devices.map(id=>new Option(id,id)));deviceId=message.devices[0]??'';if(!deviceId)status.textContent='No device connected';}if(message.type==='tap-ack'||message.type==='swipe-ack'||message.type==='long-press-ack'||message.type==='key-event-ack'||message.type==='input-text-ack'){tapPending=false;status.textContent=message.type.replace('-ack','')+' complete';}if(message.type==='preview-status')status.textContent=message.running?'Preview running':'Preview stopped';if(message.type==='error'){tapPending=false;status.textContent=message.error;}return;}const old=stage.src;const sourceDeviceId=nextFrameDeviceId;stage.onload=()=>{frameDeviceId=sourceDeviceId;if(old.startsWith('blob:'))URL.revokeObjectURL(old)};stage.src=URL.createObjectURL(new Blob([event.data],{type:frameMime}))};
 document.querySelector('#refresh').onclick=()=>socket.send(JSON.stringify({type:'device-list'}));document.querySelector('#build').onclick=()=>{if(deviceId)socket.send(JSON.stringify({type:'build-run',deviceId}));};document.querySelector('#shot').onclick=()=>{if(deviceId)socket.send(JSON.stringify({type:'screenshot',deviceId}));};document.querySelector('#start').onclick=()=>{if(deviceId)socket.send(JSON.stringify({type:'preview-start',deviceId}));};document.querySelector('#stop').onclick=()=>socket.send(JSON.stringify({type:'preview-stop'}));devices.onchange=()=>{deviceId=devices.value;frameDeviceId='';socket.send(JSON.stringify({type:'preview-stop'}));};
-stage.onclick=event=>{if(!deviceId||frameDeviceId!==deviceId){status.textContent='Capture or start preview for the selected device first';return;}if(tapPending||socket.readyState!==WebSocket.OPEN)return;const box=stage.getBoundingClientRect();const x=Math.min(stage.naturalWidth-1,Math.max(0,Math.round((event.clientX-box.left)*stage.naturalWidth/box.width)));const y=Math.min(stage.naturalHeight-1,Math.max(0,Math.round((event.clientY-box.top)*stage.naturalHeight/box.height)));tapPending=true;status.textContent='Tapping '+x+','+y;socket.send(JSON.stringify({type:'tap',deviceId,x,y}))};
+let gestureStart,longTimer,longFired=false;
+const point=event=>{const box=stage.getBoundingClientRect();return {x:Math.min(stage.naturalWidth-1,Math.max(0,Math.round((event.clientX-box.left)*stage.naturalWidth/box.width))),y:Math.min(stage.naturalHeight-1,Math.max(0,Math.round((event.clientY-box.top)*stage.naturalHeight/box.height)))}};
+const sendGesture=(type,data)=>{if(!deviceId||frameDeviceId!==deviceId){status.textContent='Capture or start preview for the selected device first';return;}if(tapPending||socket.readyState!==WebSocket.OPEN)return;tapPending=true;socket.send(JSON.stringify({type,deviceId,...data}))};
+stage.onpointerdown=event=>{gestureStart=point(event);longFired=false;longTimer=setTimeout(()=>{longFired=true;const {x,y}=gestureStart;status.textContent='Long pressing '+x+','+y;sendGesture('long-press',{x,y})},600);stage.setPointerCapture?.(event.pointerId)};
+stage.onpointerup=event=>{clearTimeout(longTimer);if(!gestureStart||longFired){gestureStart=null;return;}const end=point(event);const moved=Math.hypot(end.x-gestureStart.x,end.y-gestureStart.y);if(moved>12)sendGesture('swipe',{fromX:gestureStart.x,fromY:gestureStart.y,toX:end.x,toY:end.y});else sendGesture('tap',end);gestureStart=null};
+stage.onpointercancel=()=>{clearTimeout(longTimer);gestureStart=null};
 </script></body></html>`;
 
 const staticFrame = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920"><rect width="1080" height="1920" fill="#10151c"/><rect x="48" y="70" width="984" height="1780" rx="42" fill="#1b2430"/><text x="540" y="850" text-anchor="middle" fill="#f4f6fa" font-size="56" font-family="system-ui">HarmonyOS Preview</text><text x="540" y="940" text-anchor="middle" fill="#9eabbc" font-size="34" font-family="system-ui">Static frame</text><circle cx="540" cy="1070" r="54" fill="#4f7cff"/></svg>`);
@@ -61,7 +66,7 @@ export function createPreviewServer({ deviceAdapter = createDeviceAdapter() } = 
         version: 1,
         http: ['GET /api/devices', 'POST /api/capture', 'POST /api/tap'],
         websocket: 'ws://127.0.0.1:' + (server.address()?.port ?? port) + '/preview',
-        messages: ['device-list', 'screenshot', 'tap', 'preview-start', 'preview-stop', 'build-run']
+        messages: ['device-list', 'screenshot', 'tap', 'swipe', 'long-press', 'key-event', 'input-text', 'preview-start', 'preview-stop', 'build-run']
       }));
       return;
     }
@@ -133,6 +138,22 @@ async function handleSocketMessage(socket, deviceAdapter, sessions, message) {
   if (action.type === 'tap') {
     if (!action.deviceId) throw new Error('deviceId is required');
     socket.send(JSON.stringify({ type: 'tap-ack', ...(await deviceAdapter.tap(action)) }));
+    return;
+  }
+  if (action.type === 'swipe') {
+    socket.send(JSON.stringify({ type: 'swipe-ack', ...(await deviceAdapter.swipe(action)) }));
+    return;
+  }
+  if (action.type === 'long-press') {
+    socket.send(JSON.stringify({ type: 'long-press-ack', ...(await deviceAdapter.longPress(action)) }));
+    return;
+  }
+  if (action.type === 'key-event') {
+    socket.send(JSON.stringify({ type: 'key-event-ack', ...(await deviceAdapter.keyEvent(action)) }));
+    return;
+  }
+  if (action.type === 'input-text') {
+    socket.send(JSON.stringify({ type: 'input-text-ack', ...(await deviceAdapter.inputText(action)) }));
     return;
   }
   if (action.type === 'device-list') {

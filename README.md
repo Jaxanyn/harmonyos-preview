@@ -54,6 +54,10 @@ MCP 工具：
 - `list_devices`：列出连接的鸿蒙设备
 - `capture`：返回设备截图
 - `tap`：点击设备坐标
+- `swipe`：在两个坐标之间滑动
+- `long_press`：长按设备坐标
+- `key_event`：发送 Back、Home 或 Power
+- `input_text`：向焦点输入框或指定坐标输入文本
 - `preview_start`：启动 MCP 内部实时截图轮询
 - `preview_stop`：停止 MCP 内部实时截图轮询
 - `build_run`：构建、安装并启动工程

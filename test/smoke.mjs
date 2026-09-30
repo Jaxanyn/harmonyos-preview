@@ -13,12 +13,20 @@ const fakeDevice = createDeviceAdapter({ runtime: async (command, args) => {
 } });
 assert.deepEqual(await fakeDevice.listTargets(), ['test-device']);
 assert.deepEqual(await fakeDevice.tap({ deviceId: 'test-device', x: 12.4, y: 30.6 }), { deviceId: 'test-device', x: 12, y: 31 });
-assert.equal(calls.length, 2);
+assert.deepEqual(await fakeDevice.swipe({ deviceId: 'test-device', fromX: 10, fromY: 20, toX: 30, toY: 40 }), { deviceId: 'test-device', fromX: 10, fromY: 20, toX: 30, toY: 40, velocity: 600 });
+assert.deepEqual(await fakeDevice.longPress({ deviceId: 'test-device', x: 12.4, y: 30.6 }), { deviceId: 'test-device', x: 12, y: 31 });
+assert.deepEqual(await fakeDevice.keyEvent({ deviceId: 'test-device', key: 'Back' }), { deviceId: 'test-device', key: 'Back' });
+assert.deepEqual(await fakeDevice.inputText({ deviceId: 'test-device', text: 'hello' }), { deviceId: 'test-device', text: 'hello' });
+assert.equal(calls.length, 6);
 assert.deepEqual(calls[1].args, ['-t', 'test-device', 'shell', 'uitest', 'uiInput', 'click', '12', '31']);
+assert.deepEqual(calls[2].args, ['-t', 'test-device', 'shell', 'uitest', 'uiInput', 'swipe', '10', '20', '30', '40', '600']);
+assert.deepEqual(calls[3].args, ['-t', 'test-device', 'shell', 'uitest', 'uiInput', 'longClick', '12', '31']);
+assert.deepEqual(calls[4].args, ['-t', 'test-device', 'shell', 'uitest', 'uiInput', 'keyEvent', 'Back']);
+assert.deepEqual(calls[5].args, ['-t', 'test-device', 'shell', 'uitest', 'uiInput', 'text', 'hello']);
 for (const x of [-1, NaN, Infinity, '12']) {
   await assert.rejects(fakeDevice.tap({ deviceId: 'test-device', x, y: 30 }), /non-negative finite/);
 }
-assert.equal(calls.length, 2, 'invalid coordinates must not reach hdc');
+assert.equal(calls.length, 6, 'invalid coordinates must not reach hdc');
 const failingDevice = createDeviceAdapter({ runtime: async () => ({ code: 1, stdout: '', stderr: 'device disconnected' }) });
 await assert.rejects(failingDevice.tap({ deviceId: 'test-device', x: 12, y: 30 }), /device disconnected/);
 assert.deepEqual(readProjectConfig('C:/path/to/my-harmonyos-project'), {
@@ -30,6 +38,10 @@ let captured = 0;
 const sessionDevice = {
   listTargets: async () => ['test-device'],
   tap: fakeDevice.tap,
+  swipe: fakeDevice.swipe,
+  longPress: fakeDevice.longPress,
+  keyEvent: fakeDevice.keyEvent,
+  inputText: fakeDevice.inputText,
   install: async () => ({}),
   launch: async () => ({}),
   capture: async () => { captured += 1; return { mimeType: 'image/jpeg', data: Buffer.from('frame') }; }
@@ -56,7 +68,7 @@ try {
     name: 'harmonyos-preview', version: 1,
     http: ['GET /api/devices', 'POST /api/capture', 'POST /api/tap'],
     websocket: `ws://127.0.0.1:${port}/preview`,
-    messages: ['device-list', 'screenshot', 'tap', 'preview-start', 'preview-stop', 'build-run']
+    messages: ['device-list', 'screenshot', 'tap', 'swipe', 'long-press', 'key-event', 'input-text', 'preview-start', 'preview-stop', 'build-run']
   });
 
   const apiTap = await fetch(`http://127.0.0.1:${port}/api/tap`, {
