@@ -3,6 +3,7 @@ import { createPreviewServer } from '../src/server.mjs';
 import WebSocket from 'ws';
 import { createDeviceAdapter } from '../src/device.mjs';
 import { readProjectConfig } from '../src/project.mjs';
+import { access } from 'node:fs/promises';
 
 const calls = [];
 const fakeDevice = createDeviceAdapter({ runtime: async (command, args) => {
@@ -23,6 +24,7 @@ await assert.rejects(failingDevice.tap({ deviceId: 'test-device', x: 12, y: 30 }
 assert.deepEqual(readProjectConfig('C:/path/to/my-harmonyos-project'), {
   projectPath: 'C:/path/to/my-harmonyos-project', moduleName: 'entry', bundleName: 'com.example.preview', ability: 'EntryAbility'
 });
+await access(new URL('../bin/harmonyos-preview.mjs', import.meta.url));
 
 let captured = 0;
 const sessionDevice = {

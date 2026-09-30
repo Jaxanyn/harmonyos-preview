@@ -21,6 +21,16 @@ Agent 可先读取 `GET /api/capabilities`，再使用：
 - `POST /api/tap`：请求体 `{ "deviceId": "...", "x": 1, "y": 2 }`
 - WebSocket `/preview`：使用 `device-list`、`screenshot`、`tap`、`preview-start`、`preview-stop`、`build-run`
 
+## 插件入口
+
+本地安装依赖后可通过 CLI 启动：
+
+```powershell
+node bin/harmonyos-preview.mjs --project 'C:\path\to\my-harmonyos-project'
+```
+
+以后发布为 npm 包后，入口命令名为 `harmonyos-preview`。
+
 ## 开发
 
 ```powershell
