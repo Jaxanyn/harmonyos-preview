@@ -37,7 +37,14 @@ Agent 可先读取 `GET /api/capabilities`，再使用：
 node bin/harmonyos-preview.mjs --project 'C:\path\to\my-harmonyos-project'
 ```
 
-以后发布为 npm 包后，入口命令名为 `harmonyos-preview`。
+发布 npm 包后，入口命令名为 `harmonyos-preview`。
+
+从 npm 安装：
+
+```powershell
+npm install --global harmonyos-preview --registry=https://registry.npmjs.org/
+harmonyos-preview --help
+```
 
 生成本地安装包并安装：
 
@@ -55,6 +62,13 @@ harmonyos-preview --help
 
 ```powershell
 codex mcp add harmonyos-preview --env HARMONY_PROJECT=C:\path\to\my-harmonyos-project -- node "C:\path\to\harmonyos-preview\bin\harmonyos-preview.mjs" --mcp
+```
+
+全局安装后可使用 npm 入口注册：
+
+```powershell
+codex mcp remove harmonyos-preview
+codex mcp add harmonyos-preview --env HARMONY_PROJECT=C:\path\to\my-harmonyos-project -- harmonyos-preview --mcp
 ```
 
 MCP 工具：
