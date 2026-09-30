@@ -25,7 +25,7 @@ codex mcp add harmonyos-preview `
 1. 让 Agent 调用 `list_devices`，确认 HDC 已发现鸿蒙真机或模拟器。
 2. 需要重新安装应用时，让 Agent 调用 `build_run`。
 3. 调用 `preview_start`，记录返回的 `sessionId` 和 `previewUrl`。
-4. 在 Codex 浏览器或面板打开 `previewUrl`，页面会显示设备画面和交互控件。
+4. 在 Codex 浏览器或面板打开 `previewUrl`，页面会自动选中目标设备并开始轮询，随后显示设备画面和交互控件。
 5. Agent 使用 `capture` 获取 MCP 图片，用 `tap`、`swipe`、`long_press` 和 `input_text` 操作设备。
 6. 完成后调用 `preview_stop`，并传入原来的 `sessionId`。
 
@@ -60,7 +60,7 @@ codex mcp add harmonyos-preview `
 
 - 没有设备：检查 DevEco Studio、HDC 路径和设备授权状态。
 - `connected: false`：设备可能暂时断开；不要使用旧截图坐标，恢复后重新 `capture`。
-- 预览页面无法打开：确认 MCP 进程仍在运行，并使用最新的 `previewUrl`。
+- 预览页面无法打开：确认 MCP 进程仍在运行，并使用最新的 `previewUrl`；不要手动拼接设备参数。
 - 只想截图：可以直接调用 `capture`，不必启动实时预览。
 
-`SKILL.md` 是 Codex 工作流提示文件；真正注册设备工具的是 MCP 命令。当前预览页面需要 Codex 打开 `previewUrl`，MCP 插件不会自行注入固定侧边栏。
+`SKILL.md` 是 Codex 工作流提示文件；真正注册设备工具的是 MCP 命令。MCP 插件返回可直接打开的 `previewUrl`，但不会自行注入 Codex 固定侧边栏。

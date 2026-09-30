@@ -79,7 +79,7 @@ MCP 文本结果同时提供 `structuredContent`；截图结果提供图片内�
 
 `preview_info` 没有活动会话时返回 `running: false`，会话、设备和轮询间隔为 `null`。设备暂时离线时保留活动会话并返回 `connected: false`，`capture` 会尝试获取新截图，避免返回离线前的缓存图片。
 
-当前 `previewUrl` 指向独立的浏览器预览页面，仍需要选择设备并点击 Start preview；MCP 会话不会自动打开 Codex 面板或启动浏览器的轮询。这部分属于后续 Codex 工作流适配。
+当前 `previewUrl` 指向带设备参数的独立浏览器预览页面。打开后会自动请求设备列表、选中目标设备并启动浏览器轮询；MCP 进程仍不会自行注入 Codex 固定侧边栏，宿主只需打开返回的 URL。
 
 Codex 工作流文件位于 `skills/harmonyos-preview-codex/SKILL.md`，完整安装和使用说明位于 `docs/codex-usage.md`。它们会随 npm 包一起提供；MCP 注册仍使用上面的 `codex mcp add` 命令。
 

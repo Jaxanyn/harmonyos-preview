@@ -27,8 +27,8 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
   projectPath = process.env.HARMONY_PROJECT, port = Number(process.env.HARMONY_PREVIEW_PORT ?? 0), previewTimeoutMs = 10000 } = {}) {
   const server = createPreviewServer({ deviceAdapter });
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
-  const previewUrl = `http://127.0.0.1:${server.address().port}/`;
-  const wsUrl = previewUrl.replace('http:', 'ws:') + 'preview';
+  const serverUrl = `http://127.0.0.1:${server.address().port}/`;
+  const wsUrl = serverUrl.replace('http:', 'ws:') + 'preview';
   const lines = createInterface({ input, crlfDelay: Infinity });
   let livePreview;
   let state = 'new';
@@ -152,7 +152,8 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
   }
 
   function previewInfo() {
-    return { previewUrl, wsUrl, running: Boolean(livePreview), connected: livePreview?.connected ?? false,
+    const previewUrl = `${serverUrl}${livePreview?.deviceId ? `?deviceId=${encodeURIComponent(livePreview.deviceId)}` : ''}`;
+    return { previewUrl, serverUrl, wsUrl, running: Boolean(livePreview), connected: livePreview?.connected ?? false,
       sessionId: livePreview?.sessionId ?? null, deviceId: livePreview?.deviceId ?? null, pollMs: livePreview?.pollMs ?? null,
       capabilities: tools.map((tool) => tool.name) };
   }

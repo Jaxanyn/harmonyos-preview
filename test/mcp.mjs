@@ -56,7 +56,10 @@ try {
   assert.equal(session.connected, true);
   assert.equal(session.pollMs, 500);
   assert.match(session.sessionId, /^[\da-f-]{36}$/);
-  assert.equal(session.wsUrl, session.previewUrl.replace('http:', 'ws:') + 'preview');
+  assert.equal(session.wsUrl, session.serverUrl.replace('http:', 'ws:') + 'preview');
+  assert.equal(new URL(session.previewUrl).searchParams.get('deviceId'), 'test-device');
+  const previewPage = await (await fetch(session.previewUrl)).text();
+  assert.match(previewPage, /requestedDeviceId/);
   assert.ok(session.capabilities.includes('tap'));
   const repeated = await request('tools/call', { name: 'preview_start', arguments: { deviceId: 'test-device' } });
   assert.deepEqual(JSON.parse(repeated.result.content[0].text), session, 'repeated start must reuse the same session');
