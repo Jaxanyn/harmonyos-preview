@@ -3,7 +3,23 @@
 
 ## 当前状态
 
-第 2 步已建立最小本地 Preview Host。当前只提供回环地址上的健康检查，不连接设备、不修改 HarmonyOS 工程。
+已完成真机预览原型：发现设备、构建安装启动、截图轮询、WebSocket 预览和点击操作。
+
+## Agent 接口
+
+启动 Host 时设置 `HARMONY_PROJECT` 指向 HarmonyOS 工程：
+
+```powershell
+$env:HARMONY_PROJECT = 'C:\path\to\my-harmonyos-project'
+npm start
+```
+
+Agent 可先读取 `GET /api/capabilities`，再使用：
+
+- `GET /api/devices`：列出设备
+- `POST /api/capture`：请求体 `{ "deviceId": "..." }`，返回 Base64 JPEG
+- `POST /api/tap`：请求体 `{ "deviceId": "...", "x": 1, "y": 2 }`
+- WebSocket `/preview`：使用 `device-list`、`screenshot`、`tap`、`preview-start`、`preview-stop`、`build-run`
 
 ## 开发
 

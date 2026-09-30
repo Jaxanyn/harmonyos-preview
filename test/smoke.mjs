@@ -49,6 +49,26 @@ try {
   const devices = await fetch(`http://127.0.0.1:${port}/api/devices`);
   assert.deepEqual(await devices.json(), { devices: ['test-device'] });
 
+  const capabilities = await fetch(`http://127.0.0.1:${port}/api/capabilities`);
+  assert.deepEqual(await capabilities.json(), {
+    name: 'harmonyos-preview', version: 1,
+    http: ['GET /api/devices', 'POST /api/capture', 'POST /api/tap'],
+    websocket: `ws://127.0.0.1:${port}/preview`,
+    messages: ['device-list', 'screenshot', 'tap', 'preview-start', 'preview-stop', 'build-run']
+  });
+
+  const apiTap = await fetch(`http://127.0.0.1:${port}/api/tap`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ deviceId: 'test-device', x: 5, y: 6 })
+  });
+  assert.deepEqual(await apiTap.json(), { deviceId: 'test-device', x: 5, y: 6 });
+
+  const apiCapture = await fetch(`http://127.0.0.1:${port}/api/capture`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ deviceId: 'test-device' })
+  });
+  assert.deepEqual(await apiCapture.json(), { mimeType: 'image/jpeg', data: Buffer.from('frame').toString('base64') });
+
   socket = new WebSocket(`ws://127.0.0.1:${port}/preview`);
   const messages = [];
   await new Promise((resolve, reject) => {

@@ -55,6 +55,34 @@ export function createPreviewServer({ deviceAdapter = createDeviceAdapter() } = 
       });
       return;
     }
+    if (request.url === '/api/capabilities') {
+      response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+      response.end(JSON.stringify({
+        name: 'harmonyos-preview',
+        version: 1,
+        http: ['GET /api/devices', 'POST /api/capture', 'POST /api/tap'],
+        websocket: 'ws://127.0.0.1:' + (server.address()?.port ?? port) + '/preview',
+        messages: ['device-list', 'screenshot', 'tap', 'preview-start', 'preview-stop', 'build-run']
+      }));
+      return;
+    }
+    if (request.url === '/api/capture' || request.url === '/api/tap') {
+      if (request.method !== 'POST') {
+        response.writeHead(405, { allow: 'POST' });
+        response.end();
+        return;
+      }
+      readJson(request).then(async (body) => {
+        const result = request.url === '/api/capture'
+          ? await deviceAdapter.capture(body)
+          : await deviceAdapter.tap(body);
+        response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify(request.url === '/api/capture'
+          ? { mimeType: result.mimeType, data: result.data.toString('base64') }
+          : result));
+      }).catch((error) => sendJsonError(response, error));
+      return;
+    }
     response.writeHead(404, { 'content-type': 'application/json; charset=utf-8' });
     response.end(JSON.stringify({ error: 'not_found' }));
   });
@@ -70,6 +98,23 @@ export function createPreviewServer({ deviceAdapter = createDeviceAdapter() } = 
     socket.on('close', () => stopPolling(socket, sessions));
   });
   return server;
+}
+
+function readJson(request) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    request.on('data', (chunk) => { body += chunk; });
+    request.on('end', () => {
+      try { resolve(JSON.parse(body || '{}')); } catch { reject(new Error('invalid_json')); }
+    });
+    request.on('error', reject);
+  });
+}
+
+function sendJsonError(response, error) {
+  if (response.headersSent) return;
+  response.writeHead(400, { 'content-type': 'application/json; charset=utf-8' });
+  response.end(JSON.stringify({ error: error.message }));
 }
 
 async function handleSocketMessage(socket, deviceAdapter, sessions, message) {
