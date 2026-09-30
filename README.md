@@ -1,21 +1,19 @@
 # harmonyos-preview
 
-面向 Codex 等 AI 编程 Agent 的 HarmonyOS 真机与模拟器预览插件。Agent 通过 MCP 调用构建、安装、启动、截图和触控操作，开发者可以在 Codex 中查看设备画面并继续交互。
+面向 Codex 等 AI 编程 Agent 的 HarmonyOS 真机与模拟器预览插件。通过 MCP 完成构建、启动、截图和触控操作。
 
 [![CI](https://github.com/Jaxanyn/harmonyos-preview/actions/workflows/ci.yml/badge.svg)](https://github.com/Jaxanyn/harmonyos-preview/actions/workflows/ci.yml)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D20-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![MCP](https://img.shields.io/badge/MCP-stdio-5b5bd6)](https://modelcontextprotocol.io/)
 
-## 适用场景
-
-当 Agent 需要确认 HarmonyOS 应用的实际画面或执行触控操作时，使用 `harmonyos-preview`：
+## 能力
 
 - 读取已连接的鸿蒙设备或模拟器。
 - 构建、安装并启动 HarmonyOS 应用。
-- 获取 MCP 图片格式的设备截图。
-- 在浏览器预览页面中持续查看设备画面。
+- 返回 MCP 图片格式的设备截图。
+- 在浏览器页面中实时查看设备画面。
 - 执行点击、滑动、长按、按键和文本输入。
-- 设备暂时断开后自动重试截图，重新连接后继续预览。
+- 设备断开后自动重试，重连后继续预览。
 
 ## 工作方式
 
@@ -32,14 +30,14 @@ HarmonyOS 真机或模拟器
     └── WebSocket 浏览器预览页面
 ```
 
-插件默认只监听本机地址。预览页面由 `preview_start` 返回，打开后会根据 `deviceId` 自动选择设备并开始轮询。
+插件默认只监听本机地址。`preview_start` 返回的页面会根据 `deviceId` 自动选择设备并开始轮询。
 
 ## 前置条件
 
 1. Windows 和 Node.js 20 或更高版本。
-2. DevEco Studio 与 HDC。HDC 可通过 `PATH` 或 `HDC` 环境变量提供。
-3. 已开启 USB 调试并完成授权的 HarmonyOS 真机，或已启动的鸿蒙模拟器。
-4. 可以独立构建的 HarmonyOS 工程。项目需要提供 `build-local.ps1`，或能被 `devecocli` 构建，并设置正确的包名、Ability 和 HAP 输出路径。
+2. DevEco Studio 与 HDC，HDC 可通过 `PATH` 或 `HDC` 环境变量提供。
+3. 已授权的 HarmonyOS 真机或已启动的鸿蒙模拟器。
+4. 可独立构建的 HarmonyOS 工程，提供 `build-local.ps1` 或支持 `devecocli`。
 
 确认 HDC 能发现设备：
 
@@ -58,7 +56,7 @@ cd "C:\path\to\harmonyos-preview"
   -ProjectPath C:\path\to\my-harmonyos-project
 ```
 
-脚本会检查 Node.js、HDC 和设备，并注册 `harmonyos-preview` MCP 服务。没有连接设备时会给出警告，但不会阻止注册；需要严格要求设备时加上 `-RequireDevice`。已有同名配置不会被覆盖，确认替换时使用 `-Force`。
+脚本会检查 Node.js、HDC 和设备，并注册 `harmonyos-preview` MCP 服务。没有设备时只警告；需要严格检查设备时加上 `-RequireDevice`。已有配置不会覆盖，替换时使用 `-Force`。
 
 确认注册结果：
 
@@ -71,12 +69,7 @@ codex mcp get harmonyos-preview
 在 Codex 中发送：
 
 ```text
-请使用 harmonyos-preview 启动 C:\path\to\my-harmonyos-project：
-
-1. 发现鸿蒙设备。
-2. 如果应用尚未安装，先构建、安装并启动。
-3. 启动实时预览并打开返回的 previewUrl。
-4. 保持预览运行，等待我下一步操作。
+请使用 harmonyos-preview 启动 C:\path\to\my-harmonyos-project，必要时先构建安装，然后打开实时预览并保持运行。
 ```
 
 Agent 会按以下顺序调用工具：
@@ -90,11 +83,11 @@ list_devices
     → preview_stop
 ```
 
-`preview_start` 返回带设备参数的 `previewUrl`。打开后，页面会自动请求设备列表、选择目标设备并启动浏览器轮询。页面支持直接点击和拖动，Agent 也可以根据 `capture` 返回的截图继续操作。
+`preview_start` 返回带设备参数的 `previewUrl`。打开后，页面会自动选择设备并开始轮询，也支持直接点击和拖动。
 
 ## npm 安装
 
-发布 npm 包后，可以通过全局安装使用：
+发布 npm 包后，可以全局安装：
 
 ```powershell
 npm install --global harmonyos-preview --registry=https://registry.npmjs.org/
@@ -132,11 +125,11 @@ npm install --global .\harmonyos-preview-0.1.0.tgz
 | `input_text` | 向焦点输入框或指定坐标输入文本。 |
 | `preview_stop` | 停止当前预览会话。 |
 
-stdio 模式只向 stdout 输出 JSON-RPC 消息，预览页面仍由本机 HTTP/WebSocket 服务承载。
+stdio 模式只向 stdout 输出 JSON-RPC 消息，预览页面由本机 HTTP/WebSocket 服务承载。
 
 ## 预览会话
 
-`preview_start` 在收到首帧后返回：
+`preview_start` 收到首帧后返回：
 
 - `sessionId`：当前预览会话编号。
 - `deviceId`：设备 ID。
@@ -147,9 +140,9 @@ stdio 模式只向 stdout 输出 JSON-RPC 消息，预览页面仍由本机 HTTP
 - `running` 和 `connected`：会话与设备截图状态。
 - `capabilities`：当前可用的 MCP 工具名。
 
-同一设备重复调用 `preview_start` 会复用活动会话。切换设备会关闭旧会话并创建新的 `sessionId`。调用 `preview_stop` 时传入原会话的 `sessionId`，可以避免旧指令停止新会话。
+同一设备重复启动会复用活动会话。切换设备会关闭旧会话并创建新的 `sessionId`。停止时传入原会话的 `sessionId`，避免旧指令停止新会话。
 
-设备暂时离线时，预览会话会保留并报告 `connected: false`。重新收到设备截图后，状态恢复为在线。离线期间的 `capture` 不会返回旧缓存帧。
+设备离线时，会话保留并报告 `connected: false`。收到新截图后恢复在线，离线期间的 `capture` 不返回旧帧。
 
 ## 配置项
 
@@ -165,14 +158,14 @@ stdio 模式只向 stdout 输出 JSON-RPC 消息，预览页面仍由本机 HTTP
 
 ## 独立启动预览页面
 
-不通过 MCP 时，可以直接启动本地服务：
+不使用 MCP 时，直接启动本地服务：
 
 ```powershell
 $env:HARMONY_PROJECT = 'C:\path\to\my-harmonyos-project'
 node bin/harmonyos-preview.mjs --project 'C:\path\to\my-harmonyos-project'
 ```
 
-打开以下地址，替换为实际设备 ID：
+打开以下地址，把设备 ID 替换为实际值：
 
 ```text
 http://127.0.0.1:4100/?deviceId=DEVICE_ID
@@ -186,7 +179,7 @@ Invoke-RestMethod http://127.0.0.1:4100/health
 
 ## 真机验收
 
-该命令验证设备发现、MCP 启动、预览地址、截图和会话停止。默认不构建、不安装应用：
+该命令验证设备发现、MCP、预览地址、截图和会话停止，默认不构建或安装应用：
 
 ```powershell
 node scripts/check-codex.mjs `
@@ -194,7 +187,7 @@ node scripts/check-codex.mjs `
   --device DEVICE_ID
 ```
 
-需要验证构建、安装和启动时，在确认设备状态允许改变后追加 `--build`：
+需要验证构建、安装和启动时，确认设备可以修改后追加 `--build`：
 
 ```powershell
 node scripts/check-codex.mjs `
@@ -207,19 +200,19 @@ node scripts/check-codex.mjs `
 
 **`hdc list targets` 没有设备**
 
-确认设备已连接、已开启 USB 调试并完成授权。模拟器需要先在 DevEco Studio 中启动。
+确认设备已连接、开启 USB 调试并完成授权。模拟器需要先在 DevEco Studio 中启动。
 
 **`preview_start` 等待首帧超时**
 
-先调用 `list_devices`，确认目标设备仍在列表中。设备刚重连时，等待一轮截图后再调用 `capture`。
+调用 `list_devices` 确认设备仍在列表中。刚重连时，等待一轮截图后再调用 `capture`。
 
 **预览页面显示连接但没有设备画面**
 
-确认打开的是最新的 `previewUrl`，不要手动删除或修改其中的 `deviceId` 参数。
+确认打开的是最新的 `previewUrl`，不要修改其中的 `deviceId` 参数。
 
 **构建失败**
 
-检查 `HARMONY_PROJECT` 是否指向工程根目录，确认 `build-local.ps1` 或 `devecocli` 能够独立构建项目，并检查 HAP 输出路径和项目配置。
+检查 `HARMONY_PROJECT` 是否指向工程根目录，确认 `build-local.ps1` 或 `devecocli` 能独立构建，并检查 HAP 输出路径。
 
 ## 开发与检查
 
