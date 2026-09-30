@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createPreviewServer } from '../src/server.mjs';
 import WebSocket from 'ws';
 import { createDeviceAdapter } from '../src/device.mjs';
+import { readProjectConfig } from '../src/project.mjs';
 
 const calls = [];
 const fakeDevice = createDeviceAdapter({ runtime: async (command, args) => {
@@ -12,11 +13,16 @@ const fakeDevice = createDeviceAdapter({ runtime: async (command, args) => {
 assert.deepEqual(await fakeDevice.listTargets(), ['test-device']);
 assert.deepEqual(await fakeDevice.tap({ deviceId: 'test-device', x: 12.4, y: 30.6 }), { deviceId: 'test-device', x: 12, y: 31 });
 assert.equal(calls.length, 2);
+assert.deepEqual(readProjectConfig('C:/path/to/my-harmonyos-project'), {
+  projectPath: 'C:/path/to/my-harmonyos-project', moduleName: 'entry', bundleName: 'com.example.preview', ability: 'EntryAbility'
+});
 
 let captured = 0;
 const sessionDevice = {
   listTargets: async () => ['test-device'],
   tap: async (action) => ({ deviceId: action.deviceId, x: action.x, y: action.y }),
+  install: async () => ({}),
+  launch: async () => ({}),
   capture: async () => { captured += 1; return { mimeType: 'image/jpeg', data: Buffer.from('frame') }; }
 };
 

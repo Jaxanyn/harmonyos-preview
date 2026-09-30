@@ -25,6 +25,20 @@ export function createDeviceAdapter({ command = process.env.HDC ?? 'hdc', runtim
     return { mimeType: 'image/jpeg', data: readFileSync(local), path: local };
   }
 
+  async function install({ deviceId, hapPath } = {}) {
+    if (!deviceId || !hapPath) throw new Error('deviceId and hapPath are required');
+    const result = await hdc(['-t', deviceId, 'install', '-r', hapPath]);
+    if (result.code !== 0) throw new Error(result.stderr.trim() || 'HAP install failed');
+    return { deviceId, hapPath };
+  }
+
+  async function launch({ deviceId, bundleName, ability } = {}) {
+    if (!deviceId || !bundleName || !ability) throw new Error('deviceId, bundleName and ability are required');
+    const result = await hdc(['-t', deviceId, 'shell', 'aa', 'start', '-b', bundleName, '-a', ability]);
+    if (result.code !== 0) throw new Error(result.stderr.trim() || 'application launch failed');
+    return { deviceId, bundleName, ability };
+  }
+
   async function tap({ deviceId, x, y } = {}) {
     if (!deviceId) throw new Error('deviceId is required');
     if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('x and y must be numbers');
@@ -33,7 +47,7 @@ export function createDeviceAdapter({ command = process.env.HDC ?? 'hdc', runtim
     return { deviceId, x: Math.round(x), y: Math.round(y) };
   }
 
-  return { listTargets, capture, tap };
+  return { listTargets, capture, install, launch, tap };
 }
 
 function runCommand(command, args) {
