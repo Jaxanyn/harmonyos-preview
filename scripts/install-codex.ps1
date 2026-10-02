@@ -6,6 +6,7 @@ param(
   [string]$CodexCommand = 'codex',
   [string]$NodeCommand = 'node',
   [string]$HdcCommand = '',
+  [string]$PreviewUrl = '',
   [switch]$CheckOnly,
   [switch]$SkipDeviceCheck,
   [switch]$RequireDevice,
@@ -68,7 +69,9 @@ if ($LASTEXITCODE -eq 0 -and !$Force) {
 }
 if ($LASTEXITCODE -eq 0 -and $Force) { Invoke-Checked $codex @('mcp', 'remove', $Name) }
 
-$mcpArguments = @('mcp', 'add', $Name, '--env', "HARMONY_PROJECT=$project", '--', $node, $entry, '--mcp')
+$mcpArguments = @('mcp', 'add', $Name, '--env', "HARMONY_PROJECT=$project")
+if ($PreviewUrl) { $mcpArguments += @('--env', "HARMONY_PREVIEW_URL=$PreviewUrl") }
+$mcpArguments += @('--', $node, $entry, '--mcp')
 Invoke-Checked $codex $mcpArguments
 Write-Output "Installed Codex MCP server '$Name'."
 Write-Output "Verify with: codex mcp get $Name"

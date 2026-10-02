@@ -24,11 +24,13 @@ const textResult = (value) => ({ content: [{ type: 'text', text: JSON.stringify(
 const rpcError = (id, code, message) => ({ jsonrpc: '2.0', id, error: { code, message } });
 
 export async function startMcp({ input = process.stdin, output = process.stdout, deviceAdapter = createDeviceAdapter(),
-  projectPath = process.env.HARMONY_PROJECT, port = Number(process.env.HARMONY_PREVIEW_PORT ?? 0), previewTimeoutMs = 10000 } = {}) {
-  const server = createPreviewServer({ deviceAdapter });
-  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
-  const serverUrl = `http://127.0.0.1:${server.address().port}/`;
-  const wsUrl = serverUrl.replace('http:', 'ws:') + 'preview';
+  projectPath = process.env.HARMONY_PROJECT, port = Number(process.env.HARMONY_PREVIEW_PORT ?? 0), previewTimeoutMs = 10000,
+  previewUrl = process.env.HARMONY_PREVIEW_URL } = {}) {
+  const ownsPreviewServer = !previewUrl;
+  const server = ownsPreviewServer ? createPreviewServer({ deviceAdapter }) : null;
+  if (server) await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
+  const serverUrl = previewUrl ? normalizePreviewUrl(previewUrl) : `http://127.0.0.1:${server.address().port}/`;
+  const wsUrl = serverUrl.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:') + 'preview';
   const lines = createInterface({ input, crlfDelay: Infinity });
   let livePreview;
   let state = 'new';
@@ -55,7 +57,7 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
       }
       await new Promise((resolve, reject) => output.write(JSON.stringify(response) + '\n', (error) => error ? reject(error) : resolve()));
     }
-  } finally { lines.close(); await stopLivePreview(); await server.shutdown(); }
+  } finally { lines.close(); await stopLivePreview(); if (server) await server.shutdown(); }
 
   async function dispatch({ method, params }) {
     if (method === 'ping') return {};
@@ -157,6 +159,17 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
       sessionId: livePreview?.sessionId ?? null, deviceId: livePreview?.deviceId ?? null, pollMs: livePreview?.pollMs ?? null,
       capabilities: tools.map((tool) => tool.name) };
   }
+}
+
+function normalizePreviewUrl(value) {
+  const url = new URL(value);
+  if (!['http:', 'https:'].includes(url.protocol) || !['127.0.0.1', 'localhost'].includes(url.hostname)) {
+    throw new Error('HARMONY_PREVIEW_URL must point to a local HTTP service');
+  }
+  url.pathname = `${url.pathname.replace(/\/+$/, '')}/`;
+  url.search = '';
+  url.hash = '';
+  return url.toString();
 }
 
 function imageResult(data, mimeType, structuredContent) {

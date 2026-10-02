@@ -18,6 +18,18 @@ codex mcp add harmonyos-preview `
   -- node "C:\path\to\harmonyos-preview\bin\harmonyos-preview.mjs" --mcp
 ```
 
+如需让预览服务独立于 MCP 进程运行，先启动：
+
+```powershell
+node bin/harmonyos-preview.mjs --project C:\path\to\my-harmonyos-project
+```
+
+再在 MCP 注册命令中增加：
+
+```text
+--env HARMONY_PREVIEW_URL=http://127.0.0.1:4100
+```
+
 注册后重启 Codex 或刷新 MCP 工具列表。插件进程只监听本机地址，预览服务的端口由 MCP 进程自动分配。
 
 ## 标准使用流程
