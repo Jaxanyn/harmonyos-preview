@@ -41,6 +41,8 @@ node bin/harmonyos-preview.mjs --project C:\path\to\my-harmonyos-project
 5. Agent 使用 `capture` 获取 MCP 图片，用 `tap`、`swipe`、`long_press` 和 `input_text` 操作设备。
 6. 完成后调用 `preview_stop`，并传入原来的 `sessionId`。
 
+使用独立预览服务时，MCP 会把会话写入 `.runtime/preview-session.json`。新建 Codex 页面后先调用 `preview_info`；如果返回 `restored: true`，直接使用其中的 `previewUrl` 恢复页面。
+
 推荐提示词：
 
 ```text
@@ -56,6 +58,7 @@ node bin/harmonyos-preview.mjs --project C:\path\to\my-harmonyos-project
 - `previewUrl`：浏览器预览页面
 - `wsUrl`：WebSocket 地址
 - `connected`：是否已收到设备截图
+- `restored`：是否从独立预览服务的状态文件恢复
 - `pollMs`：截图轮询间隔
 
 `capture` 返回 MCP 图片，同时返回结构化元数据：

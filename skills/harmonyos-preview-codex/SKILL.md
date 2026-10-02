@@ -10,11 +10,12 @@ Use this workflow when the user asks to run or inspect a HarmonyOS project in a 
 ## Required workflow
 
 1. Call `list_devices` and select one device ID. If no device is listed, report that HDC must be connected and authorized.
-2. Call `build_run` with the selected device ID when the app must be rebuilt or launched.
-3. Call `preview_start` with the same device ID. Save the returned `sessionId` and `previewUrl`.
-4. Open `previewUrl` in the Codex browser/panel. Use `capture` when the next decision needs an image.
-5. Use `tap`, `swipe`, `long_press`, `key_event` or `input_text` with screenshot pixel coordinates. Capture again after a state-changing action.
-6. Call `preview_stop` with the saved `sessionId` when the preview work is finished.
+2. Call `preview_info`. If it returns `restored: true`, reuse its `sessionId` and `previewUrl`.
+3. Call `build_run` with the selected device ID when the app must be rebuilt or launched.
+4. Call `preview_start` with the same device ID when no restorable session exists. Save the returned `sessionId` and `previewUrl`.
+5. Open `previewUrl` in the Codex browser/panel. Use `capture` when the next decision needs an image.
+6. Use `tap`, `swipe`, `long_press`, `key_event` or `input_text` with screenshot pixel coordinates. Capture again after a state-changing action.
+7. Call `preview_stop` with the saved `sessionId` when the preview work is finished.
 
 ## Operating rules
 

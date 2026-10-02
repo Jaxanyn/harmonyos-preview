@@ -1,5 +1,8 @@
 import { createInterface } from 'node:readline';
 import { randomUUID } from 'node:crypto';
+import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
 import { createDeviceAdapter } from './device.mjs';
 import { createPreviewServer } from './server.mjs';
@@ -22,17 +25,19 @@ const tools = [
 
 const textResult = (value) => ({ content: [{ type: 'text', text: JSON.stringify(value) }], structuredContent: value });
 const rpcError = (id, code, message) => ({ jsonrpc: '2.0', id, error: { code, message } });
+const defaultPreviewStatePath = fileURLToPath(new URL('../.runtime/preview-session.json', import.meta.url));
 
 export async function startMcp({ input = process.stdin, output = process.stdout, deviceAdapter = createDeviceAdapter(),
   projectPath = process.env.HARMONY_PROJECT, port = Number(process.env.HARMONY_PREVIEW_PORT ?? 0), previewTimeoutMs = 10000,
-  previewUrl = process.env.HARMONY_PREVIEW_URL } = {}) {
+  previewUrl = process.env.HARMONY_PREVIEW_URL, previewStatePath = process.env.HARMONY_PREVIEW_STATE ?? defaultPreviewStatePath } = {}) {
   const ownsPreviewServer = !previewUrl;
   const server = ownsPreviewServer ? createPreviewServer({ deviceAdapter }) : null;
   if (server) await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
   const serverUrl = previewUrl ? normalizePreviewUrl(previewUrl) : `http://127.0.0.1:${server.address().port}/`;
   const wsUrl = serverUrl.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:') + 'preview';
-  const lines = createInterface({ input, crlfDelay: Infinity });
   let livePreview;
+  let persistedPreview = ownsPreviewServer ? null : await readPreviewState(previewStatePath);
+  const lines = createInterface({ input, crlfDelay: Infinity });
   let state = 'new';
   try {
     // ponytail: serial tool calls for one-device prototype; add cancellation/concurrency with the MCP SDK when needed.
@@ -57,7 +62,7 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
       }
       await new Promise((resolve, reject) => output.write(JSON.stringify(response) + '\n', (error) => error ? reject(error) : resolve()));
     }
-  } finally { lines.close(); await stopLivePreview(); if (server) await server.shutdown(); }
+  } finally { lines.close(); await stopLivePreview(undefined, { clearPersisted: false }); if (server) await server.shutdown(); }
 
   async function dispatch({ method, params }) {
     if (method === 'ping') return {};
@@ -119,7 +124,7 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
         fail(new Error('Preview connection closed before the first frame'));
         if (livePreview === state) livePreview = undefined;
       });
-      socket.on('message', (message, isBinary) => {
+      socket.on('message', async (message, isBinary) => {
         if (!isBinary) {
           let event;
           try { event = JSON.parse(message.toString()); } catch { return; }
@@ -135,16 +140,25 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
         if (!state.started) return;
         state.frame = Buffer.from(message);
         state.connected = true;
-        if (!state.settled) { state.settled = true; clearTimeout(timer); resolve(previewInfo()); }
+        if (!state.settled) {
+          state.settled = true;
+          clearTimeout(timer);
+          try { await savePreviewState(state); resolve(previewInfo()); } catch (error) { fail(error); }
+        }
       });
     });
   }
 
-  async function stopLivePreview(sessionId) {
+  async function stopLivePreview(sessionId, { clearPersisted = true } = {}) {
     const state = livePreview;
-    if (sessionId && state && sessionId !== state.sessionId) throw new Error('Preview sessionId does not match the active session');
+    const current = state ?? persistedPreview;
+    if (sessionId && current && sessionId !== current.sessionId) throw new Error('Preview sessionId does not match the active session');
     livePreview = undefined;
-    if (!state?.socket) return { running: false };
+    if (clearPersisted && !ownsPreviewServer) {
+      persistedPreview = null;
+      await clearPreviewState(previewStatePath);
+    }
+    if (!state?.socket) return current ? { running: false, deviceId: current.deviceId, sessionId: current.sessionId } : { running: false };
     if (state.socket.readyState !== WebSocket.CLOSED) {
       const closed = new Promise((resolve) => state.socket.once('close', resolve));
       state.socket.terminate();
@@ -154,11 +168,34 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
   }
 
   function previewInfo() {
-    const previewUrl = `${serverUrl}${livePreview?.deviceId ? `?deviceId=${encodeURIComponent(livePreview.deviceId)}` : ''}`;
-    return { previewUrl, serverUrl, wsUrl, running: Boolean(livePreview), connected: livePreview?.connected ?? false,
-      sessionId: livePreview?.sessionId ?? null, deviceId: livePreview?.deviceId ?? null, pollMs: livePreview?.pollMs ?? null,
+    const saved = !livePreview && !ownsPreviewServer ? persistedPreview : null;
+    const active = livePreview ?? saved;
+    const previewUrl = `${serverUrl}${active?.deviceId ? `?deviceId=${encodeURIComponent(active.deviceId)}` : ''}`;
+    return { previewUrl, serverUrl, wsUrl, running: Boolean(active), connected: livePreview?.connected ?? false,
+      restored: Boolean(saved), sessionId: active?.sessionId ?? null, deviceId: active?.deviceId ?? null, pollMs: livePreview?.pollMs ?? active?.pollMs ?? null,
       capabilities: tools.map((tool) => tool.name) };
   }
+
+  async function savePreviewState(state) {
+    if (ownsPreviewServer) return;
+    persistedPreview = { sessionId: state.sessionId, deviceId: state.deviceId, serverUrl, wsUrl, pollMs: state.pollMs, lastSeen: Date.now() };
+    await writePreviewState(previewStatePath, persistedPreview);
+  }
+}
+
+async function readPreviewState(path) {
+  try { return JSON.parse(await readFile(path, 'utf8')); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+}
+
+async function writePreviewState(path, value) {
+  await mkdir(dirname(path), { recursive: true });
+  const temporary = `${path}.${process.pid}.tmp`;
+  await writeFile(temporary, JSON.stringify(value) + '\n', 'utf8');
+  await rename(temporary, path);
+}
+
+async function clearPreviewState(path) {
+  try { await unlink(path); } catch (error) { if (error.code !== 'ENOENT') throw error; }
 }
 
 function normalizePreviewUrl(value) {
