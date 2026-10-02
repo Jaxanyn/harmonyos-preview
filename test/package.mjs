@@ -22,5 +22,7 @@ const files = [
 for (const file of files) assert.ok(existsSync(new URL('../' + file, import.meta.url)), file);
 assert.ok(!files.some((file) => file.startsWith('test/') || file.startsWith('.runtime/')));
 const workflow = readFileSync(new URL('../skills/harmonyos-preview-codex/SKILL.md', import.meta.url), 'utf8');
-for (const tool of ['list_devices', 'build_run', 'preview_start', 'capture', 'tap', 'preview_stop']) assert.match(workflow, new RegExp(`\\b${tool}\\b`));
+for (const tool of ['list_devices', 'build_run', 'preview_start', 'preview_info', 'capture', 'tap', 'preview_stop', 'open_in_codex', 'right']) {
+  assert.match(workflow, new RegExp(`\\b${tool}\\b`));
+}
 console.log('package: ok');

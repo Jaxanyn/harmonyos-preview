@@ -37,11 +37,11 @@ node bin/harmonyos-preview.mjs --project C:\path\to\my-harmonyos-project
 1. 让 Agent 调用 `list_devices`，确认 HDC 已发现鸿蒙真机或模拟器。
 2. 需要重新安装应用时，让 Agent 调用 `build_run`。
 3. 调用 `preview_start`，记录返回的 `sessionId` 和 `previewUrl`。
-4. 在 Codex 浏览器或面板打开 `previewUrl`，页面会自动选中目标设备并开始轮询，随后显示设备画面和交互控件。
+4. 使用 Codex 宿主的浏览器面板动作打开 `previewUrl`，位置设为 `right`；页面会自动选中目标设备并开始轮询，随后显示设备画面和交互控件。
 5. Agent 使用 `capture` 获取 MCP 图片，用 `tap`、`swipe`、`long_press` 和 `input_text` 操作设备。
 6. 完成后调用 `preview_stop`，并传入原来的 `sessionId`。
 
-使用独立预览服务时，MCP 会把会话写入 `.runtime/preview-session.json`。新建 Codex 页面后先调用 `preview_info`；如果返回 `restored: true`，直接使用其中的 `previewUrl` 恢复页面。
+使用独立预览服务时，MCP 会把会话写入 `.runtime/preview-session.json`。新建 Codex 页面后先调用 `preview_info`；如果返回 `restored: true`，直接使用其中的 `previewUrl`，通过 Codex 宿主浏览器面板动作以 `right` 位置恢复页面。
 
 推荐提示词：
 
