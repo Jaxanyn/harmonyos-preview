@@ -7,6 +7,7 @@ param(
   [string]$NodeCommand = 'node',
   [string]$HdcCommand = '',
   [string]$PreviewUrl = '',
+  [switch]$AutoStartPreview,
   [switch]$CheckOnly,
   [switch]$SkipDeviceCheck,
   [switch]$RequireDevice,
@@ -71,6 +72,7 @@ if ($LASTEXITCODE -eq 0 -and $Force) { Invoke-Checked $codex @('mcp', 'remove', 
 
 $mcpArguments = @('mcp', 'add', $Name, '--env', "HARMONY_PROJECT=$project")
 if ($PreviewUrl) { $mcpArguments += @('--env', "HARMONY_PREVIEW_URL=$PreviewUrl") }
+if ($AutoStartPreview) { $mcpArguments += @('--env', 'HARMONY_PREVIEW_AUTOSTART=1') }
 $mcpArguments += @('--', $node, $entry, '--mcp')
 Invoke-Checked $codex $mcpArguments
 Write-Output "Installed Codex MCP server '$Name'."

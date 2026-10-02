@@ -74,6 +74,7 @@ list_devices → build_run（可选）→ preview_start → 打开 previewUrl
 | `HDC` | `hdc` | HDC 可执行文件 |
 | `HARMONY_PREVIEW_URL` | 无 | 连接已独立运行的预览服务 |
 | `HARMONY_PREVIEW_STATE` | `.runtime/preview-session.json` | 预览会话恢复状态文件 |
+| `HARMONY_PREVIEW_AUTOSTART` | `0` | 外部服务不可用时自动拉起本机预览服务 |
 | `HARMONY_PREVIEW_PORT` | `4100` | 预览服务端口 |
 | `HARMONY_PREVIEW_POLL_MS` | `500` | 截图轮询间隔，最小 100 毫秒 |
 | `HARMONY_PREVIEW_BUILD_TIMEOUT_MS` | `300000` | 构建超时，单位毫秒 |
@@ -87,6 +88,7 @@ node bin/harmonyos-preview.mjs --project C:\path\to\my-harmonyos-project
 打开 `http://127.0.0.1:4100/?deviceId=DEVICE_ID`。
 
 需要让 MCP 复用该服务时，在注册 MCP 时增加 `HARMONY_PREVIEW_URL=http://127.0.0.1:4100`。
+需要在服务崩溃后自动恢复时，再增加 `HARMONY_PREVIEW_AUTOSTART=1`。
 
 ## 真机验收
 

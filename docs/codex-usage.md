@@ -30,6 +30,8 @@ node bin/harmonyos-preview.mjs --project C:\path\to\my-harmonyos-project
 --env HARMONY_PREVIEW_URL=http://127.0.0.1:4100
 ```
 
+需要 MCP 在服务不可用时自动拉起本机预览服务时，再增加 `--env HARMONY_PREVIEW_AUTOSTART=1`。安装脚本也支持 `-AutoStartPreview`。
+
 注册后重启 Codex 或刷新 MCP 工具列表。插件进程只监听本机地址，预览服务的端口由 MCP 进程自动分配。
 
 ## 标准使用流程

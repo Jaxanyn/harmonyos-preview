@@ -1,5 +1,6 @@
 import { createInterface } from 'node:readline';
 import { randomUUID } from 'node:crypto';
+import { spawn } from 'node:child_process';
 import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,14 +30,17 @@ const defaultPreviewStatePath = fileURLToPath(new URL('../.runtime/preview-sessi
 
 export async function startMcp({ input = process.stdin, output = process.stdout, deviceAdapter = createDeviceAdapter(),
   projectPath = process.env.HARMONY_PROJECT, port = Number(process.env.HARMONY_PREVIEW_PORT ?? 0), previewTimeoutMs = 10000,
-  previewUrl = process.env.HARMONY_PREVIEW_URL, previewStatePath = process.env.HARMONY_PREVIEW_STATE ?? defaultPreviewStatePath } = {}) {
-  const ownsPreviewServer = !previewUrl;
+  previewUrl = process.env.HARMONY_PREVIEW_URL, previewStatePath = process.env.HARMONY_PREVIEW_STATE ?? defaultPreviewStatePath,
+  previewStateTtlMs = Number(process.env.HARMONY_PREVIEW_STATE_TTL_MS ?? 86400000), autoStartPreview = process.env.HARMONY_PREVIEW_AUTOSTART === '1' } = {}) {
+  const configuredPreviewUrl = previewUrl ? normalizePreviewUrl(previewUrl) : null;
+  const ownsPreviewServer = !configuredPreviewUrl;
   const server = ownsPreviewServer ? createPreviewServer({ deviceAdapter }) : null;
   if (server) await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
-  const serverUrl = previewUrl ? normalizePreviewUrl(previewUrl) : `http://127.0.0.1:${server.address().port}/`;
+  const serverUrl = configuredPreviewUrl ?? `http://127.0.0.1:${server.address().port}/`;
   const wsUrl = serverUrl.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:') + 'preview';
   let livePreview;
-  let persistedPreview = ownsPreviewServer ? null : await readPreviewState(previewStatePath);
+  await ensurePreviewService();
+  let persistedPreview = ownsPreviewServer ? null : await readPreviewState(previewStatePath, previewStateTtlMs);
   const lines = createInterface({ input, crlfDelay: Infinity });
   let state = 'new';
   try {
@@ -85,7 +89,7 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
     validateArguments(tool.inputSchema, args);
     try {
       if (tool.name === 'list_devices') return textResult({ devices: await deviceAdapter.listTargets() });
-      if (tool.name === 'preview_info') return textResult({ ...previewInfo(), projectPath: projectPath ?? null });
+      if (tool.name === 'preview_info') { await ensurePreviewService(); return textResult({ ...previewInfo(), projectPath: projectPath ?? null }); }
       if (tool.name === 'tap') return textResult(await deviceAdapter.tap(args));
       if (tool.name === 'swipe') return textResult(await deviceAdapter.swipe(args));
       if (tool.name === 'long_press') return textResult(await deviceAdapter.longPress(args));
@@ -104,6 +108,7 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
 
   async function startLivePreview(deviceId) {
     if (livePreview?.deviceId === deviceId && livePreview.frame) return previewInfo();
+    await ensurePreviewService();
     await stopLivePreview();
     return new Promise((resolve, reject) => {
       const socket = new WebSocket(wsUrl);
@@ -181,10 +186,40 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
     persistedPreview = { sessionId: state.sessionId, deviceId: state.deviceId, serverUrl, wsUrl, pollMs: state.pollMs, lastSeen: Date.now() };
     await writePreviewState(previewStatePath, persistedPreview);
   }
+
+  async function ensurePreviewService() {
+    if (ownsPreviewServer || !autoStartPreview || await previewHealthy()) return;
+    if (!projectPath) throw new Error('HARMONY_PROJECT is required to restart the preview service');
+    const preview = new URL(serverUrl);
+    const entry = fileURLToPath(new URL('../bin/harmonyos-preview.mjs', import.meta.url));
+    const child = spawn(process.execPath, [entry, '--project', projectPath], {
+      detached: true,
+      windowsHide: true,
+      stdio: 'ignore',
+      env: { ...process.env, HARMONY_PROJECT: projectPath, HARMONY_PREVIEW_PORT: preview.port || '4100' }
+    });
+    child.unref();
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      if (await previewHealthy()) return;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    throw new Error(`Preview service did not start at ${serverUrl}`);
+  }
+
+  async function previewHealthy() {
+    try { return (await fetch(`${serverUrl}health`, { signal: AbortSignal.timeout(500) })).ok; } catch { return false; }
+  }
 }
 
-async function readPreviewState(path) {
-  try { return JSON.parse(await readFile(path, 'utf8')); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+async function readPreviewState(path, ttlMs) {
+  try {
+    const value = JSON.parse(await readFile(path, 'utf8'));
+    if (Number.isFinite(ttlMs) && ttlMs >= 0 && Number.isFinite(value.lastSeen) && Date.now() - value.lastSeen > ttlMs) {
+      await clearPreviewState(path);
+      return null;
+    }
+    return value;
+  } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
 }
 
 async function writePreviewState(path, value) {

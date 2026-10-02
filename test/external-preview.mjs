@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { PassThrough } from 'node:stream';
 import { createInterface } from 'node:readline';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createPreviewServer } from '../src/server.mjs';
@@ -62,6 +62,19 @@ try {
   assert.equal(restored.sessionId, session.sessionId);
   restoredInput.end();
   await restoredRunning;
+  await writeFile(previewStatePath, JSON.stringify({ ...persisted, lastSeen: Date.now() - 5000 }));
+  const staleInput = new PassThrough();
+  const staleOutput = new PassThrough();
+  const staleRunning = startMcp({ input: staleInput, output: staleOutput, previewUrl, previewStatePath, previewStateTtlMs: 1000, deviceAdapter: adapter });
+  const staleResponses = createInterface({ input: staleOutput })[Symbol.asyncIterator]();
+  staleInput.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } } }) + '\n');
+  await staleResponses.next();
+  staleInput.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
+  staleInput.write(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'preview_info', arguments: {} } }) + '\n');
+  const staleInfo = JSON.parse((await staleResponses.next()).value);
+  assert.equal(JSON.parse(staleInfo.result.content[0].text).restored, false);
+  staleInput.end();
+  await staleRunning;
   assert.equal((await fetch(`${previewUrl}/health`)).status, 200, 'external preview server must outlive MCP');
   await previewServer.shutdown();
   await rm(stateDirectory, { recursive: true, force: true });
