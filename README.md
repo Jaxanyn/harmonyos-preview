@@ -72,11 +72,13 @@ list_devices → build_run（可选）→ preview_start → 打开 previewUrl
 | --- | --- | --- |
 | `HARMONY_PROJECT` | 无 | MCP 模式下的工程路径 |
 | `HDC` | `hdc` | HDC 可执行文件 |
+| `HARMONY_PREVIEW_HDC_TIMEOUT_MS` | `15000` | 单次 HDC 命令超时，单位毫秒 |
 | `HARMONY_PREVIEW_URL` | 无 | 连接已独立运行的预览服务 |
 | `HARMONY_PREVIEW_STATE` | `.runtime/preview-session.json` | 预览会话恢复状态文件 |
 | `HARMONY_PREVIEW_AUTOSTART` | `0` | 外部服务不可用时自动拉起本机预览服务 |
 | `HARMONY_PREVIEW_PORT` | `4100` | 预览服务端口 |
 | `HARMONY_PREVIEW_POLL_MS` | `500` | 截图轮询间隔，最小 100 毫秒 |
+| `HARMONY_PREVIEW_BACKOFF_MAX_MS` | `10000` | 设备断线时截图轮询的最大退避间隔，单位毫秒 |
 | `HARMONY_PREVIEW_BUILD_TIMEOUT_MS` | `300000` | 构建超时，单位毫秒 |
 
 独立启动预览服务：

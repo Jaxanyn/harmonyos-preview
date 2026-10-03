@@ -1,14 +1,18 @@
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, unlinkSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const runtimeDirectory = fileURLToPath(new URL('../.runtime', import.meta.url));
+const configuredTimeoutMs = Number(process.env.HARMONY_PREVIEW_HDC_TIMEOUT_MS ?? 15000);
+const defaultTimeoutMs = Number.isFinite(configuredTimeoutMs) && configuredTimeoutMs > 0 ? configuredTimeoutMs : 15000;
 
-export function createDeviceAdapter({ command = process.env.HDC ?? 'hdc', runtime = runCommand } = {}) {
+export function createDeviceAdapter({ command = process.env.HDC ?? 'hdc', runtime = runCommand, timeoutMs = defaultTimeoutMs } = {}) {
+  const commandTimeoutMs = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : defaultTimeoutMs;
   let captures = Promise.resolve();
-  async function hdc(args) {
-    return runtime(command, args);
+  async function hdc(args, { timeoutMs: callTimeoutMs = commandTimeoutMs } = {}) {
+    return runtime(command, args, { timeoutMs: callTimeoutMs });
   }
 
   async function listTargets() {
@@ -24,16 +28,22 @@ export function createDeviceAdapter({ command = process.env.HDC ?? 'hdc', runtim
     return next;
   }
 
-  async function captureFrame({ deviceId, directory = runtimeDirectory, fileName = 'latest.jpeg' } = {}) {
+  async function captureFrame({ deviceId, directory = runtimeDirectory, fileName } = {}) {
     if (!deviceId) throw new Error('deviceId is required');
     mkdirSync(directory, { recursive: true });
-    const remote = `/data/local/tmp/harmonyos-preview-${process.pid}.jpeg`;
-    const local = join(directory, fileName);
-    const shot = await hdc(['-t', deviceId, 'shell', 'snapshot_display', '-f', remote]);
-    if (shot.code !== 0) throw new Error(shot.stderr.trim() || 'device screenshot failed');
-    const recv = await hdc(['-t', deviceId, 'file', 'recv', remote, local]);
-    if (recv.code !== 0) throw new Error(recv.stderr.trim() || 'screenshot download failed');
-    return { mimeType: 'image/jpeg', data: readFileSync(local), path: local };
+    const captureId = randomUUID();
+    const remote = `/data/local/tmp/harmonyos-preview-${process.pid}-${captureId}.jpeg`;
+    const local = join(directory, fileName ?? `capture-${process.pid}-${captureId}.jpeg`);
+    try {
+      const shot = await hdc(['-t', deviceId, 'shell', 'snapshot_display', '-f', remote]);
+      if (shot.code !== 0) throw new Error(shot.stderr.trim() || 'device screenshot failed');
+      const recv = await hdc(['-t', deviceId, 'file', 'recv', remote, local]);
+      if (recv.code !== 0) throw new Error(recv.stderr.trim() || 'screenshot download failed');
+      return { mimeType: 'image/jpeg', data: readFileSync(local) };
+    } finally {
+      try { unlinkSync(local); } catch {}
+      await hdc(['-t', deviceId, 'shell', 'rm', '-f', remote], { timeoutMs: Math.min(commandTimeoutMs, 2000) }).catch(() => {});
+    }
   }
 
   async function install({ deviceId, hapPath } = {}) {
@@ -101,14 +111,37 @@ export function createDeviceAdapter({ command = process.env.HDC ?? 'hdc', runtim
   return { listTargets, capture, install, launch, tap, swipe, longPress, keyEvent, inputText };
 }
 
-function runCommand(command, args) {
+export function runCommand(command, args, { timeoutMs = defaultTimeoutMs } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { windowsHide: true });
     let stdout = '';
     let stderr = '';
+    let settled = false;
+    const timer = Number.isFinite(timeoutMs) && timeoutMs > 0 ? setTimeout(() => {
+      if (settled) return;
+      stderr += `command timed out after ${timeoutMs}ms`;
+      terminateProcessTree(child);
+      settled = true;
+      resolve({ code: 124, stdout, stderr });
+    }, timeoutMs) : null;
     child.stdout.on('data', (chunk) => { stdout += chunk; });
     child.stderr.on('data', (chunk) => { stderr += chunk; });
-    child.on('error', reject);
-    child.on('close', (code) => resolve({ code: code ?? 1, stdout, stderr }));
+    child.on('error', (error) => {
+      if (timer) clearTimeout(timer);
+      if (!settled) { settled = true; reject(error); }
+    });
+    child.on('close', (code) => {
+      if (timer) clearTimeout(timer);
+      if (!settled) { settled = true; resolve({ code: code ?? 1, stdout, stderr }); }
+    });
   });
+}
+
+function terminateProcessTree(child) {
+  if (process.platform === 'win32' && child.pid) {
+    const killer = spawn('taskkill', ['/pid', String(child.pid), '/t', '/f'], { windowsHide: true, stdio: 'ignore' });
+    killer.once('error', () => {});
+    killer.unref();
+  }
+  try { child.kill(); } catch {}
 }

@@ -37,7 +37,7 @@ function run(command, args, cwd, timeoutMs) {
     const timer = Number.isFinite(timeoutMs) && timeoutMs > 0 ? setTimeout(() => {
       if (settled) return;
       stderr += 'build timed out';
-      child.kill();
+      terminateProcessTree(child);
       settled = true;
       resolve({ code: 124, stdout, stderr });
     }, timeoutMs) : null;
@@ -46,4 +46,13 @@ function run(command, args, cwd, timeoutMs) {
     child.on('error', (error) => { if (timer) clearTimeout(timer); if (!settled) { settled = true; reject(error); } });
     child.on('close', (code) => { if (timer) clearTimeout(timer); if (!settled) { settled = true; resolve({ code: code ?? 1, stdout, stderr }); } });
   });
+}
+
+function terminateProcessTree(child) {
+  if (process.platform === 'win32' && child.pid) {
+    const killer = spawn('taskkill', ['/pid', String(child.pid), '/t', '/f'], { windowsHide: true, stdio: 'ignore' });
+    killer.once('error', () => {});
+    killer.unref();
+  }
+  try { child.kill(); } catch {}
 }
