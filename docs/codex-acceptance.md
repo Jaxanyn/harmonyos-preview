@@ -263,3 +263,5 @@ node scripts/check-codex.mjs `
 - `metrics.capturedAt`：本次采集完成时间。
 
 本地回归覆盖 FrameSource、预览指标传递、MCP App 指标展示、断连恢复和原有 JPEG 轮询；`npm run check` 通过。当前指标用于定位截图、传输和渲染延迟，尚未引入连续视频流。
+
+同一增量还记录 `preview_action.metrics.actionMs` 和面板本地 `renderMs`，用于区分 HDC 操作耗时与图片解码/渲染耗时。当前设备的 HDC/UITest 能力没有可验证的长驻 H.264/MJPEG 输出命令，因此连续流后端暂缓，继续使用可注入的 FrameSource 和 JPEG 回退。

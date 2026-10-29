@@ -108,6 +108,7 @@ async function start(panel, id = 'A', width = 1260, height = 2720) {
   assert.equal(panel.elements['stage-overlay'].hidden, true, 'Hide the overlay after the first frame');
   assert.match(panel.elements.metrics.textContent, new RegExp(`${width}×${height}`));
   assert.match(panel.elements.metrics.textContent, /42ms · jpeg/);
+  assert.match(panel.elements.metrics.textContent, /render \d+ms/);
 }
 
 // Only decoded image dimensions determine tap coordinates, including rotated screens and edge clamping.

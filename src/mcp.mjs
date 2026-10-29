@@ -481,17 +481,20 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
     if (!state) throw tagError(new Error('No active preview session'), 'PREVIEW_UNAVAILABLE', 'preview_action');
     if (state.paused || !state.connected) throw tagError(new Error('Preview is not connected'), 'PREVIEW_UNAVAILABLE', 'preview_action');
     if (state.seq !== args.seq) throw tagError(new Error('Preview frame is stale; request a new frame before acting'), 'STALE_PREVIEW_FRAME', 'preview_action');
+    const startedAt = performance.now();
+    const actionMetrics = (result) => ({ ...result, metrics: { ...(result?.metrics ?? {}), action: args.action,
+      actionMs: Math.max(0, Math.round(performance.now() - startedAt)), frameSeq: args.seq } });
     if (args.action === 'tap') {
       if (![args.x, args.y].every((value) => Number.isFinite(value))) throw Object.assign(new Error('tap requires x and y'), { rpcCode: -32602 });
       const result = await deviceAdapter.tap({ deviceId: state.deviceId, x: args.x, y: args.y }, { signal });
       if (state.socket?.readyState === WebSocket.OPEN) state.socket.send(JSON.stringify({ type: 'preview-refresh', deviceId: state.deviceId }));
-      return { content: [], structuredContent: result };
+      return { content: [], structuredContent: actionMetrics(result) };
     }
     if (![args.x, args.y, args.toX, args.toY].every((value) => Number.isFinite(value))) throw Object.assign(new Error('swipe requires x, y, toX and toY'), { rpcCode: -32602 });
     const result = await deviceAdapter.swipe({ deviceId: state.deviceId,
       fromX: args.x, fromY: args.y, toX: args.toX, toY: args.toY }, { signal });
     if (state.socket?.readyState === WebSocket.OPEN) state.socket.send(JSON.stringify({ type: 'preview-refresh', deviceId: state.deviceId }));
-    return { content: [], structuredContent: result };
+    return { content: [], structuredContent: actionMetrics(result) };
   }
 
   async function stopLivePreview(sessionId, { clearPersisted = true } = {}) {

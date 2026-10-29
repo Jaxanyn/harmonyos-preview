@@ -291,6 +291,8 @@ try {
   const previewAction = await request('tools/call', { name: 'preview_action', arguments: { action: 'tap', seq: previewFrame.result.structuredContent.seq, x: 10, y: 20 } });
   assert.deepEqual(previewAction.result.content, [], 'App-only actions must not enter model content');
   assert.equal(previewAction.result.structuredContent.x, 10);
+  assert.equal(previewAction.result.structuredContent.metrics.action, 'tap');
+  assert.ok(Number.isFinite(previewAction.result.structuredContent.metrics.actionMs));
   assert.equal(taps, 1);
   frameData = Buffer.from([0xff, 0xd8, 0xff]);
   const previewPage = await (await fetch(session.previewUrl)).text();

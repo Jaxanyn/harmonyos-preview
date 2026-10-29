@@ -29,6 +29,7 @@ let gesturePending = false;
 let captureQueue = Promise.resolve();
 let zoom = 1;
 let markerTimer;
+const now = () => globalThis.performance?.now?.() ?? Date.now();
 
 function setStatus(message, error = false) {
   status.textContent = message;
@@ -48,7 +49,8 @@ function setMetrics(nextFrame) {
   const time = nextFrame.capturedAt ? new Date(nextFrame.capturedAt).toLocaleTimeString() : 'unknown time';
   const capture = Number.isFinite(nextFrame.metrics?.captureMs) ? ` · ${nextFrame.metrics.captureMs}ms` : '';
   const source = nextFrame.metrics?.source ? ` · ${nextFrame.metrics.source}` : '';
-  metrics.textContent = `${nextFrame.width}×${nextFrame.height} · ${time}${capture}${source} · ${Math.round(zoom * 100)}%`;
+  const render = Number.isFinite(nextFrame.metrics?.renderMs) ? ` · render ${nextFrame.metrics.renderMs}ms` : '';
+  metrics.textContent = `${nextFrame.width}×${nextFrame.height} · ${time}${capture}${source}${render} · ${Math.round(zoom * 100)}%`;
 }
 
 function setZoom(nextZoom) {
@@ -209,6 +211,7 @@ async function renderImage(result, requestedGeneration, requestedDevice) {
   if (!image || structured.deviceId !== requestedDevice) throw new Error('Screenshot does not match the selected device');
   if (!isCurrent(requestedGeneration, requestedDevice)) return false;
   frame = undefined;
+  const renderStartedAt = now();
   stage.src = `data:${image.mimeType};base64,${image.data}`;
   await stage.decode();
   if (!isCurrent(requestedGeneration, requestedDevice)) return false;
@@ -219,7 +222,7 @@ async function renderImage(result, requestedGeneration, requestedDevice) {
     height: stage.naturalHeight,
     frameId: image.frameId,
     capturedAt: image.capturedAt,
-    metrics: structured.metrics ?? null,
+    metrics: structured.metrics ? { ...structured.metrics, renderMs: Math.max(0, Math.round(now() - renderStartedAt)) } : null,
   };
   stage.style.transform = zoom === 1 ? '' : `scale(${zoom})`;
   stage.hidden = false;
@@ -353,7 +356,11 @@ async function sendGesture(event, start) {
     if (!isCurrent(requestedGeneration, requestedDevice)) return;
     if (!frame || start.width !== frame.width || start.height !== frame.height) return;
     frame = undefined;
-    await callServerTool('preview_action', arguments_);
+    const actionResult = await callServerTool('preview_action', arguments_);
+    const actionMs = actionResult?.structuredContent?.metrics?.actionMs;
+    if (Number.isFinite(actionMs) && isCurrent(requestedGeneration, requestedDevice)) {
+      setStatus(`${action === 'tap' ? 'Tap' : 'Swipe'} sent in ${actionMs}ms; waiting for frame`);
+    }
     await requestFreshFrame(requestedGeneration, requestedDevice);
   } catch (error) {
     if (isCurrent(requestedGeneration, requestedDevice)) {
