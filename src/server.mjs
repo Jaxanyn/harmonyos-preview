@@ -354,7 +354,18 @@ async function handleSocketMessage(socket, deviceAdapter, frameSource, sessions,
   if (action.type === 'preview-refresh') {
     const session = sessions.get(socket);
     if (!session || session.deviceId !== action.deviceId) throw new Error('Preview is not running for this device');
+    session.actionPaused = false;
     session.requestNow?.();
+    return;
+  }
+  if (action.type === 'preview-action-start') {
+    const session = sessions.get(socket);
+    if (!session || session.deviceId !== action.deviceId) throw new Error('Preview is not running for this device');
+    session.actionPaused = true;
+    session.captureController?.abort();
+    if (session.timer) clearTimeout(session.timer);
+    session.timer = null;
+    socket.send(JSON.stringify({ type: 'preview-action-ready', actionId: action.actionId }));
   }
 }
 
@@ -374,7 +385,8 @@ function startPolling(socket, deviceAdapter, frameSource, sessions, state, devic
   stopPolling(socket, sessions, state);
   state.deviceId = deviceId;
   const session = { stopped: false, timer: null, connected: true, lastHash: null, failures: 0,
-    deviceId, inFlight: false, refreshRequested: false, forceNext: false, requestNow: null, lastMetrics: null };
+    deviceId, inFlight: false, refreshRequested: false, forceNext: false, requestNow: null, lastMetrics: null,
+    captureController: null, actionPaused: false };
   sessions.set(socket, session);
   const current = () => !session.stopped && sessions.get(socket) === session && socket.readyState === 1;
   const poll = async () => {
@@ -386,8 +398,10 @@ function startPolling(socket, deviceAdapter, frameSource, sessions, state, devic
     session.inFlight = true;
     const startedAt = performance.now();
     let nextDelay = pollMs;
+    const captureController = new AbortController();
+    session.captureController = captureController;
     try {
-      const sample = await frameSource.capture({ deviceId });
+      const sample = await frameSource.capture({ deviceId, signal: captureController.signal });
       if (!current()) return;
       const { frame, metrics } = sample;
       session.failures = 0;
@@ -406,21 +420,29 @@ function startPolling(socket, deviceAdapter, frameSource, sessions, state, devic
       nextDelay = Math.max(0, pollMs - (performance.now() - startedAt));
     } catch (error) {
       if (!current()) return;
-      nextDelay = Math.min(pollMs * (2 ** session.failures), backoffMaxMs);
-      session.failures = Math.min(session.failures + 1, 30);
-      session.lastHash = null;
-      if (session.connected) {
-        session.connected = false;
-        socket.send(JSON.stringify({ type: 'preview-status', running: false, deviceId,
-          reason: error.errorCode === 'DEVICE_OFFLINE' ? 'device-disconnected' : 'capture-failed', reconnecting: true,
-          diagnostic: toDiagnostic(error, { errorCode: 'CAPTURE_FAILED', stage: 'capture', deviceId, elapsedMs: performance.now() - startedAt }) }));
+      if (session.actionPaused && captureController.signal.aborted) {
+        session.failures = 0;
+        nextDelay = 0;
+      } else {
+        nextDelay = Math.min(pollMs * (2 ** session.failures), backoffMaxMs);
+        session.failures = Math.min(session.failures + 1, 30);
+        session.lastHash = null;
+        if (session.connected) {
+          session.connected = false;
+          socket.send(JSON.stringify({ type: 'preview-status', running: false, deviceId,
+            reason: error.errorCode === 'DEVICE_OFFLINE' ? 'device-disconnected' : 'capture-failed', reconnecting: true,
+            diagnostic: toDiagnostic(error, { errorCode: 'CAPTURE_FAILED', stage: 'capture', deviceId, elapsedMs: performance.now() - startedAt }) }));
+        }
+        const devices = await deviceAdapter.listTargets().catch(() => []);
+        if (!current()) return;
+        socket.send(JSON.stringify({ type: 'devices', devices }));
       }
-      const devices = await deviceAdapter.listTargets().catch(() => []);
-      if (!current()) return;
-      socket.send(JSON.stringify({ type: 'devices', devices }));
+    } finally {
+      if (session.captureController === captureController) session.captureController = null;
     }
     session.inFlight = false;
     if (!current()) return;
+    if (session.actionPaused) return;
     if (session.refreshRequested) {
       session.refreshRequested = false;
       queueMicrotask(poll);
@@ -444,6 +466,7 @@ function stopPolling(socket, sessions, state) {
   const session = sessions.get(socket);
   if (!session) return;
   session.stopped = true;
+  session.captureController?.abort();
   if (session.timer) clearTimeout(session.timer);
   sessions.delete(socket);
 }
@@ -453,6 +476,7 @@ function pausePolling(socket, sessions, state) {
   const session = sessions.get(socket);
   if (!session) return;
   session.stopped = true;
+  session.captureController?.abort();
   if (session.timer) clearTimeout(session.timer);
   sessions.delete(socket);
 }

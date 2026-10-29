@@ -13,9 +13,10 @@ function deferred() {
 const captures = [];
 const lists = [];
 const adapter = {
-  capture: (options) => {
+  capture: (options, { signal } = {}) => {
     const pending = deferred();
-    captures.push({ ...pending, options });
+    signal?.addEventListener('abort', () => pending.reject(Object.assign(new Error('capture aborted'), { name: 'AbortError', code: 'ABORT_ERR' })), { once: true });
+    captures.push({ ...pending, options, signal });
     return pending.promise;
   },
   listTargets: () => {
@@ -27,8 +28,8 @@ const adapter = {
 const frameSource = {
   name: 'test-source',
   supportsStreaming: true,
-  capture: async ({ deviceId }) => {
-    const frame = await adapter.capture({ deviceId });
+  capture: async ({ deviceId, signal }) => {
+    const frame = await adapter.capture({ deviceId }, { signal });
     return { frame, metrics: { source: 'test-source', captureMs: 7, frameBytes: frame.data.byteLength, capturedAt: '2026-10-29T00:00:00.000Z' } };
   }
 };
@@ -172,6 +173,19 @@ try {
   await waitFor(() => captures.length === refreshCaptureCount + 2);
   captures.at(-1).resolve(frame('refresh-same'));
   await waitFor(() => events.filter((event) => event.binary === 'refresh-same').length === refreshFrameCount + 2);
+  await stopped();
+
+  // An action pauses and aborts an in-flight JPEG capture before the device input.
+  const actionCaptureCount = captures.length;
+  send({ type: 'preview-start', deviceId: 'A' });
+  await waitFor(() => captures.length === actionCaptureCount + 1);
+  send({ type: 'preview-action-start', deviceId: 'A', actionId: 'action-1' });
+  await waitFor(() => events.some((event) => event.type === 'preview-action-ready' && event.actionId === 'action-1'));
+  await waitFor(() => captures[actionCaptureCount].signal?.aborted === true);
+  send({ type: 'preview-refresh', deviceId: 'A' });
+  await waitFor(() => captures.length === actionCaptureCount + 2);
+  captures.at(-1).resolve(frame('action-refresh'));
+  await waitFor(() => events.some((event) => event.binary === 'action-refresh'));
   await stopped();
 
   const page = await (await fetch(address)).text();

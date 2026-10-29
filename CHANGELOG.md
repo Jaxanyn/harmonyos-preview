@@ -7,6 +7,7 @@
 - Preview polling now keeps the configured interval start-to-start, and successful screenshot cleanup runs off the critical path to reduce HDC frame latency.
 - Added a JPEG `FrameSource` contract and live preview metrics for source, capture duration, frame bytes and capture time.
 - Added local render timing and App-only action timing so slow taps can be separated from HDC capture and image decoding delays.
+- Prioritized App-only gestures by aborting an in-flight preview JPEG capture before device input and requesting the next frame immediately after the action.
 - Added five-second preview frame leases with same-session pause/resume after the panel stops requesting frames.
 - Added App-only `preview_action` for one-shot panel taps and swipes with stale-frame rejection; model-facing `tap`, `swipe` and `tap_element` remain unchanged.
 - Added `tap_element` for a fresh selector lookup and one validated component click, returning `verified: false` so callers must check the expected result separately.

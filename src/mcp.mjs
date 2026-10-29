@@ -338,7 +338,8 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
       const socket = new WebSocket(wsUrl);
       const state = { socket, sessionId: randomUUID(), deviceId, frame: null, frameMeta: null, seq: 0, receivedAt: null,
         lastFrameAccessAt: Date.now(), leaseTimer: null, paused: false, mimeType: 'image/jpeg', started: false,
-        connected: false, settled: false, saving: false, pollMs: null, frameSource: null, lastMetrics: null, frameWaiters: new Set() };
+        connected: false, settled: false, saving: false, pollMs: null, frameSource: null, lastMetrics: null,
+        frameWaiters: new Set(), actionWaiters: new Map() };
       livePreview = state;
       const timer = setTimeout(() => fail(Object.assign(new Error('Timed out waiting for the first preview frame; check device connection'),
         state.lastDiagnostic ? { errorCode: state.lastDiagnostic.errorCode, stage: state.lastDiagnostic.stage, cause: state.lastDiagnostic.cause } : {})), previewTimeoutMs);
@@ -379,6 +380,14 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
           if (event.type === 'preview-tick' && event.metrics) {
             state.lastMetrics = event.metrics;
             if (state.frameMeta) state.frameMeta.capturedAt ??= event.metrics.capturedAt;
+          }
+          if (event.type === 'preview-action-ready' && event.actionId) {
+            const waiter = state.actionWaiters.get(event.actionId);
+            if (waiter) {
+              clearTimeout(waiter.timer);
+              state.actionWaiters.delete(event.actionId);
+              waiter.resolve(true);
+            }
           }
           if (event.type === 'error') fail(Object.assign(new Error(event.error),
             { ...(event.errorCode ? { errorCode: event.errorCode } : {}), ...(event.stage ? { stage: event.stage } : {}),
@@ -475,6 +484,27 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
     state.frameWaiters?.clear();
   }
 
+  function cancelActionWaiters(state) {
+    for (const [actionId, waiter] of state.actionWaiters ?? []) {
+      clearTimeout(waiter.timer);
+      state.actionWaiters.delete(actionId);
+      waiter.resolve(false);
+    }
+  }
+
+  function pausePreviewForAction(state) {
+    if (state.socket?.readyState !== WebSocket.OPEN) return Promise.resolve(false);
+    const actionId = randomUUID();
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        state.actionWaiters.delete(actionId);
+        resolve(false);
+      }, 50);
+      state.actionWaiters.set(actionId, { resolve, timer });
+      state.socket.send(JSON.stringify({ type: 'preview-action-start', actionId, deviceId: state.deviceId }));
+    });
+  }
+
   async function previewAction(args, { signal } = {}) {
     if (signal?.aborted) throw cancellationError();
     const state = livePreview;
@@ -482,19 +512,23 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
     if (state.paused || !state.connected) throw tagError(new Error('Preview is not connected'), 'PREVIEW_UNAVAILABLE', 'preview_action');
     if (state.seq !== args.seq) throw tagError(new Error('Preview frame is stale; request a new frame before acting'), 'STALE_PREVIEW_FRAME', 'preview_action');
     const startedAt = performance.now();
+    await pausePreviewForAction(state);
+    if (signal?.aborted) throw cancellationError();
     const actionMetrics = (result) => ({ ...result, metrics: { ...(result?.metrics ?? {}), action: args.action,
       actionMs: Math.max(0, Math.round(performance.now() - startedAt)), frameSeq: args.seq } });
-    if (args.action === 'tap') {
-      if (![args.x, args.y].every((value) => Number.isFinite(value))) throw Object.assign(new Error('tap requires x and y'), { rpcCode: -32602 });
-      const result = await deviceAdapter.tap({ deviceId: state.deviceId, x: args.x, y: args.y }, { signal });
-      if (state.socket?.readyState === WebSocket.OPEN) state.socket.send(JSON.stringify({ type: 'preview-refresh', deviceId: state.deviceId }));
+    try {
+      if (args.action === 'tap') {
+        if (![args.x, args.y].every((value) => Number.isFinite(value))) throw Object.assign(new Error('tap requires x and y'), { rpcCode: -32602 });
+        const result = await deviceAdapter.tap({ deviceId: state.deviceId, x: args.x, y: args.y }, { signal });
+        return { content: [], structuredContent: actionMetrics(result) };
+      }
+      if (![args.x, args.y, args.toX, args.toY].every((value) => Number.isFinite(value))) throw Object.assign(new Error('swipe requires x, y, toX and toY'), { rpcCode: -32602 });
+      const result = await deviceAdapter.swipe({ deviceId: state.deviceId,
+        fromX: args.x, fromY: args.y, toX: args.toX, toY: args.toY }, { signal });
       return { content: [], structuredContent: actionMetrics(result) };
+    } finally {
+      if (state.socket?.readyState === WebSocket.OPEN) state.socket.send(JSON.stringify({ type: 'preview-refresh', deviceId: state.deviceId }));
     }
-    if (![args.x, args.y, args.toX, args.toY].every((value) => Number.isFinite(value))) throw Object.assign(new Error('swipe requires x, y, toX and toY'), { rpcCode: -32602 });
-    const result = await deviceAdapter.swipe({ deviceId: state.deviceId,
-      fromX: args.x, fromY: args.y, toX: args.toX, toY: args.toY }, { signal });
-    if (state.socket?.readyState === WebSocket.OPEN) state.socket.send(JSON.stringify({ type: 'preview-refresh', deviceId: state.deviceId }));
-    return { content: [], structuredContent: actionMetrics(result) };
   }
 
   async function stopLivePreview(sessionId, { clearPersisted = true } = {}) {
@@ -502,7 +536,10 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
     const current = state ?? persistedPreview;
     if (sessionId && current && sessionId !== current.sessionId) throw new Error('Preview sessionId does not match the active session');
     livePreview = undefined;
-    if (state) cancelFrameWaiters(state);
+    if (state) {
+      cancelFrameWaiters(state);
+      cancelActionWaiters(state);
+    }
     if (state?.leaseTimer) clearTimeout(state.leaseTimer);
     if (state?.socket && state.socket.readyState !== WebSocket.CLOSED) {
       const closed = new Promise((resolve) => state.socket.once('close', resolve));

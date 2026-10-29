@@ -96,7 +96,8 @@ export function createDeviceAdapter({ command = process.env.HDC ?? 'hdc', runtim
     } finally {
       try { unlinkSync(local); } catch {}
       const cleanup = hdc(['-t', deviceId, 'shell', 'rm', '-f', remote], { timeoutMs: Math.min(commandTimeoutMs, 2000), stage: 'capture_cleanup', probe: false }).catch(() => {});
-      if (!frameReady) await cleanup;
+      // shortcut: aborted cleanup may finish after the next capture; remote paths are unique.
+      if (!frameReady && !signal?.aborted) await cleanup;
     }
   }
 
