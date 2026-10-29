@@ -293,6 +293,7 @@ try {
   assert.equal(previewAction.result.structuredContent.x, 10);
   assert.equal(previewAction.result.structuredContent.metrics.action, 'tap');
   assert.ok(Number.isFinite(previewAction.result.structuredContent.metrics.actionMs));
+  assert.ok(Number.isInteger(previewAction.result.structuredContent.metrics.nextFrameAfterSeq));
   assert.equal(taps, 1);
   frameData = Buffer.from([0xff, 0xd8, 0xff]);
   const previewPage = await (await fetch(session.previewUrl)).text();

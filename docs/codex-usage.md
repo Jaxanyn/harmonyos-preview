@@ -89,9 +89,9 @@ MCP 请求可以并发处理；同一设备上的点击、输入、构建和启�
 - `restored`：是否从独立预览服务的状态文件恢复
 - `pollMs`：截图轮询间隔
 
-`preview_frame` 是 MCP App 专用的实时帧接口，参数 `afterSeq` 用于去重，动作后的读取可传 `waitMs` 等待下一个新帧。结构化结果中的 `metrics` 提供 `source`、`captureMs`、`frameBytes` 和 `capturedAt`，面板还会显示本地 `renderMs`；`preview_action` 返回 `actionMs` 和对应的 `frameSeq`，用于判断点击响应瓶颈。它返回 `content: []`，图片只放在结构化结果中，不进入模型上下文。`capture` 仍然每次重新采集设备画面，适合模型在动作后取得独立证据。
+`preview_frame` 是 MCP App 专用的实时帧接口，参数 `afterSeq` 用于去重，动作后的读取可传 `waitMs` 等待下一个新帧。结构化结果中的 `metrics` 提供 `source`、`captureMs`、`frameBytes`、`capturedAt`、`width`、`height`、`deviceWidth` 和 `deviceHeight`，面板还会显示本地 `renderMs`；`preview_action` 返回 `actionMs`、`frameSeq` 和 `nextFrameAfterSeq`，用于判断点击响应瓶颈并跳过动作前帧。它返回 `content: []`，图片只放在结构化结果中，不进入模型上下文。`capture` 仍然每次重新采集设备画面，适合模型在动作后取得独立证据。
 
-面板动作开始时会优先中止正在进行的预览 JPEG 采集，动作完成后立即触发下一帧；旧版预览服务不支持该握手时会自动回退到原动作路径。
+面板动作开始时会优先中止正在进行的预览 JPEG 采集，并在 HDC 输入启动后提前准备下一帧；动作完成后会再次刷新，`nextFrameAfterSeq` 用于跳过可能早于动作完成的帧。预览首帧用于推导设备尺寸，后续 JPEG 默认按一半分辨率采集，面板坐标会映射回设备原始像素；旧版预览服务不支持该握手时会自动回退到原动作路径。
 
 ### 连接自检与错误证据
 

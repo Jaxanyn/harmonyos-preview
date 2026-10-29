@@ -73,8 +73,11 @@ export function createDeviceAdapter({ command = process.env.HDC ?? 'hdc', runtim
     });
   }
 
-  async function captureFrame({ deviceId } = {}, { deadline = Infinity, signal } = {}) {
+  async function captureFrame({ deviceId, width, height } = {}, { deadline = Infinity, signal } = {}) {
     if (!deviceId) throw new Error('deviceId is required');
+    if (width !== undefined || height !== undefined) {
+      if (![width, height].every((value) => Number.isInteger(value) && value > 0 && value <= 4096)) throw new Error('capture dimensions must be positive integers from 1 to 4096');
+    }
     if (signal?.aborted) throw abortError();
     if (performance.now() >= deadline) throw Object.assign(deadlineError('capture_queue', 'CAPTURE_FAILED'), { deviceId });
     try { mkdirSync(directory, { recursive: true }); } catch (error) { throw tagError(error, 'CAPTURE_FAILED', 'capture'); }
@@ -84,7 +87,10 @@ export function createDeviceAdapter({ command = process.env.HDC ?? 'hdc', runtim
     let stage = 'capture';
     let frameReady = false;
     try {
-      await hdc(['-t', deviceId, 'shell', 'snapshot_display', '-f', remote], { deadline, signal, errorCode: 'CAPTURE_FAILED', stage });
+      const snapshotArgs = ['-t', deviceId, 'shell', 'snapshot_display'];
+      if (width !== undefined) snapshotArgs.push('-w', String(width), '-h', String(height));
+      snapshotArgs.push('-f', remote);
+      await hdc(snapshotArgs, { deadline, signal, errorCode: 'CAPTURE_FAILED', stage });
       stage = 'capture_transfer';
       await hdc(['-t', deviceId, 'file', 'recv', remote, local], { deadline, signal, errorCode: 'CAPTURE_FAILED', stage });
       stage = 'capture_read';

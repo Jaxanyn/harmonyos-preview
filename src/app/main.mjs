@@ -335,6 +335,16 @@ function imagePoint(event) {
   };
 }
 
+function devicePoint(point, currentFrame) {
+  const deviceWidth = currentFrame.metrics?.deviceWidth;
+  const deviceHeight = currentFrame.metrics?.deviceHeight;
+  if (!Number.isFinite(deviceWidth) || !Number.isFinite(deviceHeight)) return point;
+  return {
+    x: Math.min(deviceWidth - 1, Math.max(0, Math.round(point.x * deviceWidth / currentFrame.width))),
+    y: Math.min(deviceHeight - 1, Math.max(0, Math.round(point.y * deviceHeight / currentFrame.height))),
+  };
+}
+
 async function sendGesture(event, start) {
   if (!previewRunning || gesturePending || !start || start.generation !== generation || start.deviceId !== deviceId) return;
   if (!frame || start.width !== frame.width || start.height !== frame.height) return;
@@ -345,10 +355,12 @@ async function sendGesture(event, start) {
   const moved = Math.hypot(end.x - start.x, end.y - start.y);
   const action = moved > 12 ? 'swipe' : 'tap';
   if (action === 'tap') showGestureMarker(end);
+  const startDevicePoint = devicePoint(start, frame);
+  const endDevicePoint = devicePoint(end, frame);
   setStatus(action === 'tap' ? 'Sending tap…' : 'Sending swipe…');
   const arguments_ = action === 'tap'
-    ? { action, seq: frameSeq, x: end.x, y: end.y }
-    : { action, seq: frameSeq, x: start.x, y: start.y, toX: end.x, toY: end.y };
+    ? { action, seq: frameSeq, x: endDevicePoint.x, y: endDevicePoint.y }
+    : { action, seq: frameSeq, x: startDevicePoint.x, y: startDevicePoint.y, toX: endDevicePoint.x, toY: endDevicePoint.y };
   gesturePending = true;
   clearTimeout(pollTimer);
   try {
@@ -358,6 +370,8 @@ async function sendGesture(event, start) {
     frame = undefined;
     const actionResult = await callServerTool('preview_action', arguments_);
     const actionMs = actionResult?.structuredContent?.metrics?.actionMs;
+    const nextFrameAfterSeq = actionResult?.structuredContent?.metrics?.nextFrameAfterSeq;
+    if (Number.isInteger(nextFrameAfterSeq)) frameSeq = Math.max(frameSeq, nextFrameAfterSeq);
     if (Number.isFinite(actionMs) && isCurrent(requestedGeneration, requestedDevice)) {
       setStatus(`${action === 'tap' ? 'Tap' : 'Swipe'} sent in ${actionMs}ms; waiting for frame`);
     }

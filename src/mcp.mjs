@@ -367,7 +367,9 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
           if (event.type === 'frame-meta') {
             state.mimeType = event.mimeType || state.mimeType;
             state.frameMeta = { deviceId: event.deviceId ?? state.deviceId, frameId: event.frameId,
-              capturedAt: event.capturedAt, width: event.width, height: event.height, mimeType: state.mimeType };
+              capturedAt: event.capturedAt, width: event.width, height: event.height, deviceWidth: event.deviceWidth,
+              deviceHeight: event.deviceHeight, scaled: event.scaled, requestedWidth: event.requestedWidth,
+              requestedHeight: event.requestedHeight, mimeType: state.mimeType };
           }
           if (event.type === 'preview-status') {
             if (event.running) state.started = true;
@@ -433,6 +435,11 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
     }
     const frameMeta = state.frameMeta ?? {};
     const hasNewFrame = Boolean(state.frame && state.seq > afterSeq);
+    const metrics = state.lastMetrics ?? (frameMeta.deviceWidth ? {
+      source: state.frameSource, deviceWidth: frameMeta.deviceWidth, deviceHeight: frameMeta.deviceHeight,
+      scaled: frameMeta.scaled, requestedWidth: frameMeta.requestedWidth, requestedHeight: frameMeta.requestedHeight,
+      capturedAt: frameMeta.capturedAt
+    } : null);
     return {
       content: [],
       structuredContent: {
@@ -443,7 +450,7 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
         seq: state.seq,
         frameAgeMs: state.receivedAt ? Math.max(0, Date.now() - state.receivedAt) : null,
         frameSource: state.frameSource,
-        metrics: state.lastMetrics,
+        metrics,
         frame: hasNewFrame ? {
           mimeType: frameMeta.mimeType || state.mimeType,
           data: state.frame.toString('base64'),
@@ -505,6 +512,10 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
     });
   }
 
+  function refreshPreviewAfterAction(state) {
+    if (state.socket?.readyState === WebSocket.OPEN) state.socket.send(JSON.stringify({ type: 'preview-refresh', deviceId: state.deviceId }));
+  }
+
   async function previewAction(args, { signal } = {}) {
     if (signal?.aborted) throw cancellationError();
     const state = livePreview;
@@ -514,20 +525,31 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
     const startedAt = performance.now();
     await pausePreviewForAction(state);
     if (signal?.aborted) throw cancellationError();
-    const actionMetrics = (result) => ({ ...result, metrics: { ...(result?.metrics ?? {}), action: args.action,
-      actionMs: Math.max(0, Math.round(performance.now() - startedAt)), frameSeq: args.seq } });
+    const actionMetrics = (result, finishedAt) => {
+      const latestCapturedAt = Date.parse(state.frameMeta?.capturedAt ?? state.lastMetrics?.capturedAt ?? '');
+      const nextFrameAfterSeq = Number.isFinite(latestCapturedAt) && latestCapturedAt >= finishedAt
+        ? Math.max(args.seq, state.seq - 1) : state.seq;
+      return { ...result, metrics: { ...(result?.metrics ?? {}), action: args.action,
+        actionMs: Math.max(0, Math.round(performance.now() - startedAt)), frameSeq: args.seq, nextFrameAfterSeq } };
+    };
+    let leadTimer;
     try {
       if (args.action === 'tap') {
         if (![args.x, args.y].every((value) => Number.isFinite(value))) throw Object.assign(new Error('tap requires x and y'), { rpcCode: -32602 });
-        const result = await deviceAdapter.tap({ deviceId: state.deviceId, x: args.x, y: args.y }, { signal });
-        return { content: [], structuredContent: actionMetrics(result) };
+        const actionPromise = deviceAdapter.tap({ deviceId: state.deviceId, x: args.x, y: args.y }, { signal });
+        leadTimer = setTimeout(() => refreshPreviewAfterAction(state), 150);
+        const result = await actionPromise;
+        return { content: [], structuredContent: actionMetrics(result, Date.now()) };
       }
       if (![args.x, args.y, args.toX, args.toY].every((value) => Number.isFinite(value))) throw Object.assign(new Error('swipe requires x, y, toX and toY'), { rpcCode: -32602 });
-      const result = await deviceAdapter.swipe({ deviceId: state.deviceId,
+      const actionPromise = deviceAdapter.swipe({ deviceId: state.deviceId,
         fromX: args.x, fromY: args.y, toX: args.toX, toY: args.toY }, { signal });
-      return { content: [], structuredContent: actionMetrics(result) };
+      leadTimer = setTimeout(() => refreshPreviewAfterAction(state), 150);
+      const result = await actionPromise;
+      return { content: [], structuredContent: actionMetrics(result, Date.now()) };
     } finally {
-      if (state.socket?.readyState === WebSocket.OPEN) state.socket.send(JSON.stringify({ type: 'preview-refresh', deviceId: state.deviceId }));
+      clearTimeout(leadTimer);
+      refreshPreviewAfterAction(state);
     }
   }
 

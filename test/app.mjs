@@ -6,10 +6,11 @@ const source = await readFile(new URL('../src/app/main.mjs', import.meta.url), '
 const flush = async () => { for (let turn = 0; turn < 12; turn += 1) await Promise.resolve(); };
 const textResult = (value) => ({ content: [{ type: 'text', text: JSON.stringify(value) }], structuredContent: value });
 let nextFrameSeq = 0;
-const imageResult = (deviceId, width = 1260, height = 2720) => ({
+const imageResult = (deviceId, width = 1260, height = 2720, deviceScale = 1) => ({
   content: [],
   structuredContent: { deviceId, connected: true, sessionId: 'test-session', seq: ++nextFrameSeq,
-    metrics: { source: 'jpeg', captureMs: 42, frameBytes: 1234, capturedAt: new Date().toISOString() },
+    metrics: { source: 'jpeg', captureMs: 42, frameBytes: 1234, capturedAt: new Date().toISOString(),
+      ...(deviceScale === 1 ? {} : { deviceWidth: width * deviceScale, deviceHeight: height * deviceScale }) },
     frame: { mimeType: 'image/png', data: `${width}x${height}`, frameId: `frame-${nextFrameSeq}`, capturedAt: new Date().toISOString(), width, height } },
 });
 
@@ -89,6 +90,21 @@ function createPanel() {
     elements.stage.dispatch('pointerup', { clientX: x, clientY: y, pointerId: 1 });
   };
   return { elements, sent, timers, windowListeners, parent, take, reply, runPoll, runTimer, clickImage };
+}
+
+// A half-resolution preview must map pointer coordinates back to device pixels.
+{
+  const panel = await readyPanel();
+  panel.elements.start.dispatch('click');
+  await panel.reply(panel.take('preview_start'), textResult({ sessionId: 'session-scaled', deviceId: 'A', pollMs: 500 }));
+  await panel.reply(panel.take('preview_frame'), imageResult('A', 1260, 2720, 2));
+  panel.clickImage(167.5, 360);
+  await flush();
+  const scaledTap = panel.take('preview_action').params.arguments;
+  assert.equal(scaledTap.action, 'tap');
+  assert.equal(scaledTap.seq, nextFrameSeq);
+  assert.equal(scaledTap.x, 2520 / 2, 'Scaled preview x must use device pixels');
+  assert.equal(scaledTap.y, 5440 / 2, 'Scaled preview y must use device pixels');
 }
 
 async function readyPanel() {

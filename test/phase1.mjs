@@ -34,6 +34,10 @@ try {
   assert.ok(calls.every(({ options }) => Number.isFinite(options?.timeoutMs) && options.timeoutMs > 0), 'HDC calls must receive a timeout');
   assert.equal(await readFile(sentinel, 'utf8'), 'keep', 'caller must not override screenshot paths');
   assert.ok(calls.filter(({ args }) => args.includes('recv')).every(({ args }) => dirname(args.at(-1)) === directory));
+  calls.length = 0;
+  await adapter.capture({ deviceId: 'test-device', width: 100, height: 200 });
+  assert.ok(calls.some(({ args }) => args.includes('snapshot_display') && args.includes('-w') && args.includes('100') && args.includes('-h') && args.includes('200')),
+    'preview dimensions must reach snapshot_display');
   assert.deepEqual(await readdir(directory), ['keep.txt'], 'only generated screenshot files must be cleaned up');
   await adapter.capture({ deviceId: 'test-device', directory, fileName: 'keep.txt' });
   assert.equal(await readFile(sentinel, 'utf8'), 'keep', 'caller filename must never overwrite or delete an existing file');

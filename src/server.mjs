@@ -369,13 +369,14 @@ async function handleSocketMessage(socket, deviceAdapter, frameSource, sessions,
   }
 }
 
-function sendFrame(socket, frame, deviceId, session, source = 'capture', force = false) {
+function sendFrame(socket, frame, deviceId, session, source = 'capture', force = false, metrics = null) {
   if (socket.readyState !== 1) return;
   const hash = createHash('sha1').update(frame.data).digest('hex');
   if (session?.lastHash === hash && !force) return false;
   if (session) session.lastHash = hash;
-  const metadata = Object.fromEntries(['frameId', 'capturedAt', 'width', 'height']
-    .filter((key) => frame[key] !== undefined).map((key) => [key, frame[key]]));
+  const metadata = Object.fromEntries(['frameId', 'capturedAt', 'width', 'height', 'deviceWidth', 'deviceHeight', 'scaled', 'requestedWidth', 'requestedHeight']
+    .filter((key) => frame[key] !== undefined || metrics?.[key] !== undefined)
+    .map((key) => [key, frame[key] ?? metrics?.[key]]));
   socket.send(JSON.stringify({ type: 'frame-meta', mimeType: frame.mimeType, deviceId, source, ...metadata }));
   socket.send(frame.data);
   return true;
@@ -411,7 +412,7 @@ function startPolling(socket, deviceAdapter, frameSource, sessions, state, devic
       }
       const force = session.forceNext;
       session.forceNext = false;
-      const changed = sendFrame(socket, frame, deviceId, session, 'preview', force);
+      const changed = sendFrame(socket, frame, deviceId, session, 'preview', force, metrics);
       session.lastMetrics = metrics;
       if (socket.readyState === 1) socket.send(JSON.stringify({ type: 'preview-tick', at: Date.now(), changed, metrics }));
       // Keep the configured poll period as a start-to-start interval. A device
