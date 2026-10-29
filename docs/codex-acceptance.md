@@ -234,7 +234,7 @@ node scripts/check-codex.mjs `
 
 - `src/build.mjs` 和 `src/device.mjs` 的 Windows 进程树终止现在等待 `taskkill` 完成后再返回超时结果。
 - 子进程 `close` 事件不会抢先结束清理流程，避免测试和 CI 提前删除仍被占用的目录。
-- 本地 `npm run check`、`npm pack --dry-run` 和 `git diff --check` 已通过；远程成功运行仍需提交后由 GitHub Actions 重新执行。
+- 本地 `npm run check`、`npm pack --dry-run` 和 `git diff --check` 已通过；推送分支 `codex/ci-remote-validation` 后手动触发运行 `40815016187`，Node 20 和 Node 22 两个矩阵任务均成功。
 
 ## 2026-10-29 ArkTS 警告复核
 
