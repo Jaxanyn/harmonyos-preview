@@ -9,6 +9,7 @@
 - Added local render timing and App-only action timing so slow taps can be separated from HDC capture and image decoding delays.
 - Prioritized App-only gestures by aborting an in-flight preview JPEG capture before device input and requesting the next frame immediately after the action.
 - Preview JPEG sampling now uses the first frame to derive device dimensions, samples later frames at half resolution, maps panel coordinates back to device pixels, and overlaps the first post-action capture with HDC input startup.
+- Model-facing device actions now request an immediate live-preview refresh after a successful tap, element tap, swipe, key event, long press or text input.
 - Added five-second preview frame leases with same-session pause/resume after the panel stops requesting frames.
 - Added App-only `preview_action` for one-shot panel taps and swipes with stale-frame rejection; model-facing `tap`, `swipe` and `tap_element` remain unchanged.
 - Added `tap_element` for a fresh selector lookup and one validated component click, returning `verified: false` so callers must check the expected result separately.

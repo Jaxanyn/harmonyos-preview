@@ -317,7 +317,10 @@ try {
   assert.deepEqual(JSON.parse((await request('tools/call', { name: 'long_press', arguments: { deviceId: 'test-device', x: 1, y: 2 } })).result.content[0].text).x, 1);
   assert.deepEqual(JSON.parse((await request('tools/call', { name: 'key_event', arguments: { deviceId: 'test-device', key: 'Back' } })).result.content[0].text).key, 'Back');
   assert.deepEqual(JSON.parse((await request('tools/call', { name: 'input_text', arguments: { deviceId: 'test-device', text: 'hello' } })).result.content[0].text).text, 'hello');
+  const previewRefreshBeforeTap = captured;
   await request('tools/call', { name: 'tap', arguments: { deviceId: 'test-device', x: 12, y: 24 } });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.ok(captured > previewRefreshBeforeTap, 'model actions must refresh the active live preview immediately');
   assert.equal(taps, 2);
   const capturesBefore = captured;
   const afterTap = await request('tools/call', { name: 'capture', arguments: { deviceId: 'test-device' } });

@@ -278,12 +278,11 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
             warnings: ['UITest layout is unavailable. Inspect the screenshot; no device action was executed.'] }, args.deviceId, true, { timeoutMs: 3000, signal });
         }
       }
-      if (tool.name === 'tap') return textResult(await withDeviceLock(args.deviceId, signal, () => deviceAdapter.tap(args, { signal })));
-      if (tool.name === 'tap_element') return textResult(await withDeviceLock(args.deviceId, signal, () => deviceAdapter.tapElement(args, { signal })));
-      if (tool.name === 'swipe') return textResult(await withDeviceLock(args.deviceId, signal, () => deviceAdapter.swipe(args, { signal })));
-      if (tool.name === 'long_press') return textResult(await withDeviceLock(args.deviceId, signal, () => deviceAdapter.longPress(args, { signal })));
-      if (tool.name === 'key_event') return textResult(await withDeviceLock(args.deviceId, signal, () => deviceAdapter.keyEvent(args, { signal })));
-      if (tool.name === 'input_text') return textResult(await withDeviceLock(args.deviceId, signal, () => deviceAdapter.inputText(args, { signal })));
+      if (['tap', 'tap_element', 'swipe', 'long_press', 'key_event', 'input_text'].includes(tool.name)) {
+        const result = await withDeviceLock(args.deviceId, signal, () => deviceAdapter[tool.name === 'tap_element' ? 'tapElement' : tool.name === 'long_press' ? 'longPress' : tool.name === 'key_event' ? 'keyEvent' : tool.name === 'input_text' ? 'inputText' : tool.name](args, { signal }));
+        requestLivePreviewRefresh(args.deviceId);
+        return textResult(result);
+      }
       if (tool.name === 'build_run') return textResult(await withDeviceLock(args.deviceId, signal, () => buildAndRun(deviceAdapter, {
         projectPath, deviceId: args.deviceId, moduleName: args.moduleName, artifactName: args.artifactName, signal
       })));
@@ -514,6 +513,13 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
 
   function refreshPreviewAfterAction(state) {
     if (state.socket?.readyState === WebSocket.OPEN) state.socket.send(JSON.stringify({ type: 'preview-refresh', deviceId: state.deviceId }));
+  }
+
+  function requestLivePreviewRefresh(deviceId) {
+    const state = livePreview;
+    if (state?.deviceId === deviceId && state.socket?.readyState === WebSocket.OPEN) {
+      state.socket.send(JSON.stringify({ type: 'preview-refresh', deviceId }));
+    }
   }
 
   async function previewAction(args, { signal } = {}) {

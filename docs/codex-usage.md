@@ -93,6 +93,8 @@ MCP 请求可以并发处理；同一设备上的点击、输入、构建和启�
 
 面板动作开始时会优先中止正在进行的预览 JPEG 采集，并在 HDC 输入启动后提前准备下一帧；动作完成后会再次刷新，`nextFrameAfterSeq` 用于跳过可能早于动作完成的帧。预览首帧用于推导设备尺寸，后续 JPEG 默认按一半分辨率采集，面板坐标会映射回设备原始像素；旧版预览服务不支持该握手时会自动回退到原动作路径。
 
+模型调用 `tap`、`tap_element`、`swipe`、`long_press`、`key_event` 或 `input_text` 成功后，也会立即刷新正在运行的实时预览，减少等待下一轮轮询的时间。
+
 ### 连接自检与错误证据
 
 调用 `preview_info` 可读取 `runtime`：`serverVersion`、`diagnosticsVersion`（当前为 `1`）、`startedAt` 和 `instanceId`。`instanceId` 在同一次 MCP 服务启动期间保持不变，重启后更换；它标识当前调用连到的 MCP 实例，不代表外部 HTTP 预览服务或宿主缓存已更新。
