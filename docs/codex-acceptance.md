@@ -272,6 +272,8 @@ node scripts/check-codex.mjs `
 
 真机 `5KLBB25A13202598` 复核结果：首帧 `captureMs=873ms`，点击 `actionMs=645ms`、请求往返 `647ms`，点击后的新帧等待 `575ms`、新帧采集 `570ms`；过程中没有断连或错误。
 
+新增基准脚本在同一真机执行 3 次点击：`actionRoundTripMs=814/808/795ms`，`actionMs=618/478/499ms`，`captureMs=632/627/624ms`，帧为 `800×1280`、`frameSource=jpeg`，三次均返回 `frameAgeMs=0`。
+
 ## 2026-10-29 JPEG 尺寸与点击重叠优化
 
 FrameSource 首帧解析 JPEG 尺寸后，将后续预览采样缩为设备原始分辨率的一半，并把 `deviceWidth`、`deviceHeight` 放入指标。服务端把指标尺寸写入帧元数据，MCP App 按设备像素发送点击和滑动，避免缩放预览造成坐标偏移。

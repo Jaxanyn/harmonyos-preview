@@ -95,6 +95,8 @@ MCP 请求可以并发处理；同一设备上的点击、输入、构建和启�
 
 模型调用 `tap`、`tap_element`、`swipe`、`long_press`、`key_event` 或 `input_text` 成功后，也会立即刷新正在运行的实时预览，减少等待下一轮轮询的时间。
 
+可用 `npm run benchmark:preview -- --device <设备 ID> --actions 3` 重复执行真机预览点击基准，输出每次动作耗时、采集耗时、帧大小和分辨率。`--x`、`--y` 可指定测试坐标，默认使用 `1,1`。
+
 ### 连接自检与错误证据
 
 调用 `preview_info` 可读取 `runtime`：`serverVersion`、`diagnosticsVersion`（当前为 `1`）、`startedAt` 和 `instanceId`。`instanceId` 在同一次 MCP 服务启动期间保持不变，重启后更换；它标识当前调用连到的 MCP 实例，不代表外部 HTTP 预览服务或宿主缓存已更新。
