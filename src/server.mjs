@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { WebSocketServer } from 'ws';
 import { createDeviceAdapter } from './device.mjs';
 import { buildAndRun } from './build.mjs';
+import { toDiagnostic } from './diagnostics.mjs';
 
 const host = process.env.HARMONY_PREVIEW_HOST ?? '127.0.0.1';
 const port = Number(process.env.HARMONY_PREVIEW_PORT ?? 4100);
@@ -15,24 +16,116 @@ const previewPage = `<!doctype html>
 <style>
   :root{color-scheme:dark;font:14px system-ui,sans-serif}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:#0c0f14;color:#f4f6fa;display:grid;grid-template-rows:auto 1fr}
   aside{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:12px 18px;background:#151a22;border-bottom:1px solid #2a303b;box-shadow:0 4px 18px #0003}h1{font-size:18px;margin:0}.brand{display:flex;align-items:center;gap:12px;margin-right:8px}.brand p{margin:0}p{color:#aeb8c8;line-height:1.5}#status{color:#75e0aa}.device{display:flex;align-items:center;gap:8px;color:#aeb8c8}.actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}select,button{min-height:32px;border:1px solid #3b4554;border-radius:6px;background:#202733;color:#f4f6fa;padding:6px 10px}button{cursor:pointer}button:hover{background:#2b3544}
-  main{display:grid;place-items:center;min-width:0;min-height:0;padding:20px}#stage{max-width:100%;max-height:calc(100vh - 96px);background:#000;box-shadow:0 16px 50px #0009;cursor:crosshair}
+  main{display:grid;place-items:center;min-width:0;min-height:0;padding:20px}#stage{max-width:100%;max-height:calc(100vh - 96px);background:#000;box-shadow:0 16px 50px #0009;cursor:crosshair}#stage[hidden]{display:none}
   @media (max-width:720px){aside{align-items:flex-start;gap:10px;padding:12px}.brand{width:100%;justify-content:space-between}.device{flex:1}.actions{width:100%}main{padding:12px}#stage{max-height:calc(100vh - 150px)}}
-</style></head><body><aside><div class="brand"><h1>HarmonyOS Preview</h1><p id="status">Connecting…</p></div><label class="device">设备 / 型号<select id="devices"><option value="">No device selected</option></select></label><div class="actions"><button id="refresh">Refresh devices</button><button id="build">Build · Install · Run</button><button id="shot">Capture screenshot</button><button id="start">Start preview</button><button id="stop">Stop preview</button></div></aside><main><img id="stage" alt="HarmonyOS preview frame"></main>
+</style></head><body><aside><div class="brand"><h1>HarmonyOS Preview</h1><p id="status">Connecting…</p></div><label class="device">设备 / 型号<select id="devices"><option value="">No device selected</option></select></label><div class="actions"><button id="refresh">Refresh devices</button><button id="build">Build · Install · Run</button><button id="shot">Capture screenshot</button><button id="start">Start preview</button><button id="stop">Stop preview</button></div></aside><main><img id="stage" alt="HarmonyOS preview frame" hidden></main>
 <script>
-const stage=document.querySelector('#stage');const status=document.querySelector('#status');const devices=document.querySelector('#devices');const requestedDeviceId=new URLSearchParams(location.search).get('deviceId')||'';let deviceId=requestedDeviceId,frameDeviceId='',nextFrameDeviceId='',tapPending=false,autoStart=Boolean(requestedDeviceId);
-const socket=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/preview');let frameMime='image/png';
+const stage=document.querySelector('#stage');
+const status=document.querySelector('#status');
+const devices=document.querySelector('#devices');
+const requestedDeviceId=new URLSearchParams(location.search).get('deviceId')||'';
+let deviceId=requestedDeviceId,frameDeviceId='',nextFrameMeta=null,autoStart=Boolean(requestedDeviceId);
+let generation=0,imageSequence=0,acceptFrames=false,recovering=false,awaitingCapture=false,pendingGesture=null,gestureStart=null,longTimer=null,longFired=false;
+const socket=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/preview');
 socket.binaryType='blob';
-socket.onopen=()=>{status.textContent='Connected';socket.send(JSON.stringify({type:'device-list'}));};
-socket.onclose=()=>status.textContent='Disconnected';
-socket.onerror=()=>status.textContent='Connection error';
-socket.onmessage=event=>{if(typeof event.data==='string'){const message=JSON.parse(event.data);if(message.type==='status'||message.type==='run-status')status.textContent=message.text;if(message.type==='frame-meta'){frameMime=message.mimeType;nextFrameDeviceId=message.deviceId??'';}if(message.type==='devices'){const previous=deviceId;devices.replaceChildren(...message.devices.map(id=>new Option(id,id)));deviceId=message.devices.includes(requestedDeviceId)?requestedDeviceId:(message.devices.includes(previous)?previous:(message.devices[0]??''));devices.value=deviceId;if(!deviceId)status.textContent='No device connected';else if(autoStart){autoStart=false;socket.send(JSON.stringify({type:'preview-start',deviceId}));}}if(message.type==='tap-ack'||message.type==='swipe-ack'||message.type==='long-press-ack'||message.type==='key-event-ack'||message.type==='input-text-ack'){tapPending=false;status.textContent=message.type.replace('-ack','')+' complete';}if(message.type==='preview-status')status.textContent=message.running?(message.reconnecting?'Reconnecting':'Preview running'):(message.reason==='device-disconnected'?'Device disconnected; retrying':'Preview stopped');if(message.type==='error'){tapPending=false;status.textContent=message.error;}return;}const old=stage.src;const sourceDeviceId=nextFrameDeviceId;stage.onload=()=>{frameDeviceId=sourceDeviceId;if(old.startsWith('blob:'))URL.revokeObjectURL(old)};stage.src=URL.createObjectURL(new Blob([event.data],{type:frameMime}))};
-document.querySelector('#refresh').onclick=()=>socket.send(JSON.stringify({type:'device-list'}));document.querySelector('#build').onclick=()=>{if(deviceId)socket.send(JSON.stringify({type:'build-run',deviceId}));};document.querySelector('#shot').onclick=()=>{if(deviceId)socket.send(JSON.stringify({type:'screenshot',deviceId}));};document.querySelector('#start').onclick=()=>{if(deviceId)socket.send(JSON.stringify({type:'preview-start',deviceId}));};document.querySelector('#stop').onclick=()=>socket.send(JSON.stringify({type:'preview-stop'}));devices.onchange=()=>{deviceId=devices.value;frameDeviceId='';socket.send(JSON.stringify({type:'preview-stop'}));};
-let gestureStart,longTimer,longFired=false;
+
+function cancelGesture(){clearTimeout(longTimer);longTimer=null;gestureStart=null;longFired=false;}
+function invalidateFrame(){
+  generation++;imageSequence++;frameDeviceId='';nextFrameMeta=null;pendingGesture=null;cancelGesture();
+  stage.onload=null;stage.onerror=null;stage.style.pointerEvents='none';stage.hidden=true;
+  const old=stage.src;stage.removeAttribute('src');
+  if(old.startsWith('blob:'))URL.revokeObjectURL(old);
+}
+function send(type,data={}){if(socket.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type,...data}));}
+function requestFrame(type='screenshot'){
+  invalidateFrame();recovering=false;awaitingCapture=type==='screenshot';acceptFrames=Boolean(deviceId)&&socket.readyState===WebSocket.OPEN;
+  if(acceptFrames)send(type,{deviceId});
+}
+function canInteract(){return acceptFrames&&deviceId&&frameDeviceId===deviceId&&!pendingGesture&&socket.readyState===WebSocket.OPEN&&stage.naturalWidth>0&&stage.naturalHeight>0;}
+invalidateFrame();
+socket.onopen=()=>{status.textContent='Connected';send('device-list');};
+socket.onclose=()=>{acceptFrames=false;recovering=false;invalidateFrame();status.textContent='Disconnected';};
+socket.onerror=()=>{acceptFrames=false;recovering=false;invalidateFrame();status.textContent='Connection error';};
+socket.onmessage=event=>{
+  if(typeof event.data==='string'){
+    const message=JSON.parse(event.data);
+    if(message.type==='status'||message.type==='run-status')status.textContent=message.text;
+    if(message.type==='frame-meta')nextFrameMeta=message;
+    if(message.type==='devices'){
+      const previous=deviceId;
+      const keepSelection=previous&&(acceptFrames||recovering||pendingGesture);
+      const options=message.devices.map(id=>new Option(id,id));
+      if(keepSelection&&!message.devices.includes(previous))options.push(new Option(previous+' (disconnected)',previous));
+      devices.replaceChildren(...options);
+      deviceId=keepSelection?previous:(message.devices.includes(previous)?previous:(message.devices.includes(requestedDeviceId)?requestedDeviceId:(message.devices[0]??'')));
+      devices.value=deviceId;
+      if(deviceId!==previous){acceptFrames=false;recovering=false;invalidateFrame();}
+      if(!deviceId)status.textContent='No device connected';
+      else if(autoStart){autoStart=false;requestFrame('preview-start');}
+    }
+    if(['tap-ack','swipe-ack','long-press-ack','key-event-ack','input-text-ack'].includes(message.type)){
+      if(pendingGesture&&pendingGesture.deviceId===deviceId&&pendingGesture.generation===generation&&message.deviceId===deviceId){
+        status.textContent=message.type.replace('-ack','')+' complete';requestFrame();
+      }
+    }
+    if(message.type==='preview-status'&&(!message.deviceId||message.deviceId===deviceId)){
+      if(!message.running||message.reconnecting){
+        recovering=Boolean(message.reconnecting&&(acceptFrames||recovering));acceptFrames=false;invalidateFrame();
+      }else if(message.reconnecting===false&&recovering){recovering=false;acceptFrames=true;}
+      status.textContent=message.running?(message.reconnecting?'Reconnecting':'Preview running'):(message.reconnecting?(message.reason==='device-disconnected'?'Device disconnected; retrying':'Capture failed; retrying'):'Preview stopped');
+    }
+    if(message.type==='error'){acceptFrames=false;recovering=false;invalidateFrame();status.textContent=message.error;}
+    return;
+  }
+  const meta=nextFrameMeta;nextFrameMeta=null;
+  if(!acceptFrames||!meta||meta.deviceId!==deviceId||(awaitingCapture&&meta.source!=='capture'))return;
+  const expectedGeneration=generation,sequence=++imageSequence;
+  const source=URL.createObjectURL(new Blob([event.data],{type:meta.mimeType}));
+  const image=new Image();
+  const current=()=>acceptFrames&&generation===expectedGeneration&&sequence===imageSequence&&meta.deviceId===deviceId&&socket.readyState===WebSocket.OPEN;
+  image.onload=()=>{
+    if(!current()){URL.revokeObjectURL(source);return;}
+    const old=stage.src;
+    stage.onload=()=>{if(current()&&stage.src===source){frameDeviceId=meta.deviceId;awaitingCapture=false;stage.style.pointerEvents='auto';stage.hidden=false;}};
+    stage.onerror=()=>{if(current()){acceptFrames=false;recovering=false;invalidateFrame();status.textContent='Preview image could not be loaded';}};
+    stage.src=source;
+    if(old.startsWith('blob:'))URL.revokeObjectURL(old);
+  };
+  image.onerror=()=>{URL.revokeObjectURL(source);if(current()){acceptFrames=false;recovering=false;invalidateFrame();status.textContent='Preview image could not be loaded';}};
+  image.src=source;
+};
+document.querySelector('#refresh').onclick=()=>send('device-list');
+document.querySelector('#build').onclick=()=>{if(deviceId){invalidateFrame();send('build-run',{deviceId});}};
+document.querySelector('#shot').onclick=()=>requestFrame();
+document.querySelector('#start').onclick=()=>requestFrame('preview-start');
+document.querySelector('#stop').onclick=()=>{acceptFrames=false;recovering=false;invalidateFrame();send('preview-stop');};
+devices.onchange=()=>{deviceId=devices.value;autoStart=false;acceptFrames=false;recovering=false;invalidateFrame();send('preview-stop');};
 const point=event=>{const box=stage.getBoundingClientRect();return {x:Math.min(stage.naturalWidth-1,Math.max(0,Math.round((event.clientX-box.left)*stage.naturalWidth/box.width))),y:Math.min(stage.naturalHeight-1,Math.max(0,Math.round((event.clientY-box.top)*stage.naturalHeight/box.height)))}};
-const sendGesture=(type,data)=>{if(!deviceId||frameDeviceId!==deviceId){status.textContent='Capture or start preview for the selected device first';return;}if(tapPending||socket.readyState!==WebSocket.OPEN)return;tapPending=true;socket.send(JSON.stringify({type,deviceId,...data}))};
-stage.onpointerdown=event=>{gestureStart=point(event);longFired=false;longTimer=setTimeout(()=>{longFired=true;const {x,y}=gestureStart;status.textContent='Long pressing '+x+','+y;sendGesture('long-press',{x,y})},600);stage.setPointerCapture?.(event.pointerId)};
-stage.onpointerup=event=>{clearTimeout(longTimer);if(!gestureStart||longFired){gestureStart=null;return;}const end=point(event);const moved=Math.hypot(end.x-gestureStart.x,end.y-gestureStart.y);if(moved>12)sendGesture('swipe',{fromX:gestureStart.x,fromY:gestureStart.y,toX:end.x,toY:end.y});else sendGesture('tap',end);gestureStart=null};
-stage.onpointercancel=()=>{clearTimeout(longTimer);gestureStart=null};
+function unchangedGestureGeometry(){
+  if(!gestureStart)return false;
+  const box=stage.getBoundingClientRect(),geometry=gestureStart.geometry;
+  if(stage.naturalWidth===geometry.width&&stage.naturalHeight===geometry.height&&box.width===geometry.displayWidth&&box.height===geometry.displayHeight&&box.left===geometry.left&&box.top===geometry.top)return true;
+  acceptFrames=false;recovering=false;invalidateFrame();status.textContent='Screen geometry changed; capture a new screenshot';return false;
+}
+const sendGesture=(type,data)=>{
+  if(!canInteract()){status.textContent='Capture or start preview for the selected device first';return;}
+  invalidateFrame();acceptFrames=false;pendingGesture={deviceId,generation};send(type,{deviceId,...data});
+};
+stage.onpointerdown=event=>{
+  if(!canInteract())return;
+  const box=stage.getBoundingClientRect();
+  gestureStart={...point(event),geometry:{width:stage.naturalWidth,height:stage.naturalHeight,displayWidth:box.width,displayHeight:box.height,left:box.left,top:box.top}};longFired=false;
+  longTimer=setTimeout(()=>{if(!gestureStart||!canInteract()||!unchangedGestureGeometry())return;const {x,y}=gestureStart;longFired=true;status.textContent='Long pressing '+x+','+y;sendGesture('long-press',{x,y});},600);
+  stage.setPointerCapture?.(event.pointerId);
+};
+stage.onpointerup=event=>{
+  clearTimeout(longTimer);
+  if(!gestureStart||longFired||!canInteract()||!unchangedGestureGeometry()){gestureStart=null;return;}
+  const start=gestureStart,end=point(event);gestureStart=null;
+  const moved=Math.hypot(end.x-start.x,end.y-start.y);
+  if(moved>12)sendGesture('swipe',{fromX:start.x,fromY:start.y,toX:end.x,toY:end.y});else sendGesture('tap',end);
+};
+stage.onpointercancel=cancelGesture;
 </script></body></html>`;
 
 const staticFrame = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920"><rect width="1080" height="1920" fill="#10151c"/><rect x="48" y="70" width="984" height="1780" rx="42" fill="#1b2430"/><text x="540" y="850" text-anchor="middle" fill="#f4f6fa" font-size="56" font-family="system-ui">HarmonyOS Preview</text><text x="540" y="940" text-anchor="middle" fill="#9eabbc" font-size="34" font-family="system-ui">Static frame</text><circle cx="540" cy="1070" r="54" fill="#4f7cff"/></svg>`);
@@ -61,12 +154,13 @@ export function createPreviewServer({ deviceAdapter = createDeviceAdapter() } = 
       return;
     }
     if (request.url === '/api/devices') {
+      const startedAt = performance.now();
       deviceAdapter.listTargets().then((devices) => {
         response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
         response.end(JSON.stringify({ devices }));
       }).catch((error) => {
         response.writeHead(503, { 'content-type': 'application/json; charset=utf-8' });
-        response.end(JSON.stringify({ error: error.message }));
+        response.end(JSON.stringify(toDiagnostic(error, { errorCode: 'HDC_FAILED', stage: 'list_devices', elapsedMs: performance.now() - startedAt })));
       });
       return;
     }
@@ -87,15 +181,19 @@ export function createPreviewServer({ deviceAdapter = createDeviceAdapter() } = 
         response.end();
         return;
       }
+      const startedAt = performance.now();
+      let deviceId = null;
       readJson(request).then(async (body) => {
+        deviceId = typeof body?.deviceId === 'string' ? body.deviceId : null;
         const result = request.url === '/api/capture'
-          ? await deviceAdapter.capture(body)
+          ? await deviceAdapter.capture(captureOptions(body))
           : await deviceAdapter.tap(body);
         response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
         response.end(JSON.stringify(request.url === '/api/capture'
           ? { mimeType: result.mimeType, data: result.data.toString('base64') }
           : result));
-      }).catch((error) => sendJsonError(response, error));
+      }).catch((error) => sendJsonError(response, error, { deviceId, stage: request.url === '/api/capture' ? 'capture' : 'tap',
+        errorCode: request.url === '/api/capture' ? 'CAPTURE_FAILED' : 'ACTION_FAILED', elapsedMs: performance.now() - startedAt }));
       return;
     }
     response.writeHead(404, { 'content-type': 'application/json; charset=utf-8' });
@@ -108,13 +206,19 @@ export function createPreviewServer({ deviceAdapter = createDeviceAdapter() } = 
   });
   const sessions = new Map();
   sockets.on('connection', (socket) => {
+    const state = { generation: 0, deviceId: null };
     socket.send(JSON.stringify({ type: 'status', text: 'Preview connected' }));
     socket.send(JSON.stringify({ type: 'frame-meta', mimeType: 'image/svg+xml', width: 1080, height: 1920 }));
     socket.send(staticFrame);
     socket.on('message', (message) => {
-      handleSocketMessage(socket, deviceAdapter, sessions, message).catch((error) => socket.send(JSON.stringify({ type: 'error', error: error.message })));
+      const startedAt = performance.now();
+      const context = { stage: 'websocket', deviceId: state.deviceId };
+      handleSocketMessage(socket, deviceAdapter, sessions, state, message, context).catch((error) => {
+        if (socket.readyState === 1) socket.send(JSON.stringify({ type: 'error', ...toDiagnostic(error,
+          { errorCode: 'REQUEST_FAILED', ...context, elapsedMs: performance.now() - startedAt }) }));
+      });
     });
-    socket.on('close', () => stopPolling(socket, sessions));
+    socket.on('close', () => stopPolling(socket, sessions, state));
   });
   server.shutdown = () => {
     for (const socket of sockets.clients) { stopPolling(socket, sessions); socket.terminate(); }
@@ -144,10 +248,10 @@ function readJson(request) {
   });
 }
 
-function sendJsonError(response, error) {
+function sendJsonError(response, error, context) {
   if (response.headersSent) return;
   response.writeHead(error.statusCode ?? 400, { 'content-type': 'application/json; charset=utf-8' });
-  response.end(JSON.stringify({ error: error.message }));
+  response.end(JSON.stringify(toDiagnostic(error, context)));
 }
 
 function isAllowedOrigin(origin, actualPort) {
@@ -164,9 +268,20 @@ function isAllowedOrigin(origin, actualPort) {
   }
 }
 
-async function handleSocketMessage(socket, deviceAdapter, sessions, message) {
+function captureOptions(value, allowedKeys = ['deviceId']) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('capture requires an object');
+  const unexpected = Object.keys(value).filter((key) => !allowedKeys.includes(key));
+  if (unexpected.length) throw new Error(`unsupported capture parameter: ${unexpected.join(', ')}`);
+  if (typeof value.deviceId !== 'string' || !value.deviceId.trim()) throw new Error('deviceId is required');
+  return { deviceId: value.deviceId };
+}
+
+async function handleSocketMessage(socket, deviceAdapter, sessions, state, message, context) {
   let action;
   try { action = JSON.parse(message.toString()); } catch { throw new Error('invalid_message'); }
+  if (!action || typeof action !== 'object' || Array.isArray(action)) throw new Error('invalid_message');
+  context.stage = typeof action.type === 'string' ? action.type : 'websocket';
+  context.deviceId = typeof action.deviceId === 'string' ? action.deviceId : state.deviceId;
   if (action.type === 'build-run') {
     const result = await buildAndRun(deviceAdapter, { projectPath, deviceId: action.deviceId },
       (text) => { if (socket.readyState === 1) socket.send(JSON.stringify({ type: 'run-status', text })); });
@@ -199,64 +314,139 @@ async function handleSocketMessage(socket, deviceAdapter, sessions, message) {
     return;
   }
   if (action.type === 'screenshot') {
-    const frame = await deviceAdapter.capture(action);
-    sendFrame(socket, frame, action.deviceId);
+    const options = captureOptions(action, ['type', 'deviceId']);
+    if (state.deviceId !== options.deviceId) {
+      stopPolling(socket, sessions, state);
+      state.deviceId = options.deviceId;
+    }
+    const generation = state.generation;
+    try {
+      const frame = await deviceAdapter.capture(options);
+      if (state.generation === generation) sendFrame(socket, frame, options.deviceId);
+    } catch (error) {
+      if (state.generation === generation) throw error;
+    }
     return;
   }
   if (action.type === 'preview-start') {
-    if (!action.deviceId) throw new Error('deviceId is required');
-    startPolling(socket, deviceAdapter, sessions, action.deviceId);
+    const { deviceId } = captureOptions(action, ['type', 'deviceId']);
+    startPolling(socket, deviceAdapter, sessions, state, deviceId);
     socket.send(JSON.stringify({ type: 'preview-status', running: true, deviceId: action.deviceId, pollMs }));
     return;
   }
   if (action.type === 'preview-stop') {
-    stopPolling(socket, sessions);
+    stopPolling(socket, sessions, state);
     socket.send(JSON.stringify({ type: 'preview-status', running: false }));
+    return;
+  }
+  if (action.type === 'preview-pause') {
+    pausePolling(socket, sessions, state);
+    socket.send(JSON.stringify({ type: 'preview-status', running: false, paused: true, deviceId: state.deviceId }));
+    return;
+  }
+  if (action.type === 'preview-resume') {
+    const { deviceId } = captureOptions(action, ['type', 'deviceId']);
+    startPolling(socket, deviceAdapter, sessions, state, deviceId);
+    socket.send(JSON.stringify({ type: 'preview-status', running: true, paused: false, deviceId, pollMs }));
+    return;
+  }
+  if (action.type === 'preview-refresh') {
+    const session = sessions.get(socket);
+    if (!session || session.deviceId !== action.deviceId) throw new Error('Preview is not running for this device');
+    session.requestNow?.();
   }
 }
 
-function sendFrame(socket, frame, deviceId, session) {
+function sendFrame(socket, frame, deviceId, session, source = 'capture', force = false) {
   if (socket.readyState !== 1) return;
   const hash = createHash('sha1').update(frame.data).digest('hex');
-  if (session?.lastHash === hash) return false;
+  if (session?.lastHash === hash && !force) return false;
   if (session) session.lastHash = hash;
-  socket.send(JSON.stringify({ type: 'frame-meta', mimeType: frame.mimeType, deviceId }));
+  const metadata = Object.fromEntries(['frameId', 'capturedAt', 'width', 'height']
+    .filter((key) => frame[key] !== undefined).map((key) => [key, frame[key]]));
+  socket.send(JSON.stringify({ type: 'frame-meta', mimeType: frame.mimeType, deviceId, source, ...metadata }));
   socket.send(frame.data);
   return true;
 }
 
-function startPolling(socket, deviceAdapter, sessions, deviceId) {
-  stopPolling(socket, sessions);
-  const session = { stopped: false, timer: null, connected: true, lastHash: null, failures: 0 };
+function startPolling(socket, deviceAdapter, sessions, state, deviceId) {
+  stopPolling(socket, sessions, state);
+  state.deviceId = deviceId;
+  const session = { stopped: false, timer: null, connected: true, lastHash: null, failures: 0,
+    deviceId, inFlight: false, refreshRequested: false, forceNext: false, requestNow: null };
   sessions.set(socket, session);
+  const current = () => !session.stopped && sessions.get(socket) === session && socket.readyState === 1;
   const poll = async () => {
-    if (session.stopped || socket.readyState !== 1) return;
+    if (!current()) return;
+    if (session.inFlight) {
+      session.refreshRequested = true;
+      return;
+    }
+    session.inFlight = true;
+    const startedAt = performance.now();
     let nextDelay = pollMs;
     try {
-      const changed = sendFrame(socket, await deviceAdapter.capture({ deviceId }), deviceId, session);
+      const frame = await deviceAdapter.capture({ deviceId });
+      if (!current()) return;
       session.failures = 0;
       if (!session.connected) {
         session.connected = true;
         if (socket.readyState === 1) socket.send(JSON.stringify({ type: 'preview-status', running: true, deviceId, reconnecting: false }));
       }
+      const force = session.forceNext;
+      session.forceNext = false;
+      const changed = sendFrame(socket, frame, deviceId, session, 'preview', force);
       if (socket.readyState === 1) socket.send(JSON.stringify({ type: 'preview-tick', at: Date.now(), changed }));
+      // Keep the configured poll period as a start-to-start interval. A device
+      // capture is often slower than pollMs; waiting another full period after
+      // it completes makes the preview unnecessarily stale after a tap.
+      nextDelay = Math.max(0, pollMs - (performance.now() - startedAt));
     } catch (error) {
+      if (!current()) return;
       nextDelay = Math.min(pollMs * (2 ** session.failures), backoffMaxMs);
       session.failures = Math.min(session.failures + 1, 30);
-      if (socket.readyState !== 1) return;
+      session.lastHash = null;
       if (session.connected) {
         session.connected = false;
-        socket.send(JSON.stringify({ type: 'preview-status', running: false, deviceId, reason: 'device-disconnected', reconnecting: true }));
+        socket.send(JSON.stringify({ type: 'preview-status', running: false, deviceId,
+          reason: error.errorCode === 'DEVICE_OFFLINE' ? 'device-disconnected' : 'capture-failed', reconnecting: true,
+          diagnostic: toDiagnostic(error, { errorCode: 'CAPTURE_FAILED', stage: 'capture', deviceId, elapsedMs: performance.now() - startedAt }) }));
       }
       const devices = await deviceAdapter.listTargets().catch(() => []);
+      if (!current()) return;
       socket.send(JSON.stringify({ type: 'devices', devices }));
     }
-    if (!session.stopped) session.timer = setTimeout(poll, nextDelay);
+    session.inFlight = false;
+    if (!current()) return;
+    if (session.refreshRequested) {
+      session.refreshRequested = false;
+      queueMicrotask(poll);
+    } else {
+      session.timer = setTimeout(poll, nextDelay);
+    }
+  };
+  session.requestNow = () => {
+    if (!current()) return;
+    session.forceNext = true;
+    if (session.timer) clearTimeout(session.timer);
+    session.timer = null;
+    if (session.inFlight) session.refreshRequested = true;
+    else queueMicrotask(poll);
   };
   poll();
 }
 
-function stopPolling(socket, sessions) {
+function stopPolling(socket, sessions, state) {
+  if (state) { state.generation += 1; state.deviceId = null; }
+  const session = sessions.get(socket);
+  if (!session) return;
+  session.stopped = true;
+  if (session.timer) clearTimeout(session.timer);
+  sessions.delete(socket);
+}
+
+function pausePolling(socket, sessions, state) {
+  if (state) state.generation += 1;
   const session = sessions.get(socket);
   if (!session) return;
   session.stopped = true;

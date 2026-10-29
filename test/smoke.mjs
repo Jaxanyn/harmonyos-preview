@@ -81,6 +81,15 @@ try {
     body: JSON.stringify({ deviceId: 'test-device', x: 5, y: 6 })
   });
   assert.deepEqual(await apiTap.json(), { deviceId: 'test-device', x: 5, y: 6 });
+  const invalidApiTap = await fetch(`http://127.0.0.1:${port}/api/tap`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ deviceId: 'test-device', x: -1, y: 6 })
+  });
+  const apiDiagnostic = await invalidApiTap.json();
+  assert.equal(apiDiagnostic.errorCode, 'ACTION_FAILED');
+  assert.equal(apiDiagnostic.stage, 'tap');
+  assert.equal(apiDiagnostic.deviceId, 'test-device');
+  assert.match(apiDiagnostic.cause.message, /non-negative finite/);
 
   const apiCapture = await fetch(`http://127.0.0.1:${port}/api/capture`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
@@ -121,12 +130,16 @@ try {
     socket.once('message', resolve);
     socket.send(JSON.stringify({ type: 'tap', deviceId: 'test-device', x: -1, y: 240 }));
   });
-  assert.match(JSON.parse(invalidTap.toString()).error, /non-negative finite/);
+  const socketDiagnostic = JSON.parse(invalidTap.toString());
+  assert.match(socketDiagnostic.error, /non-negative finite/);
+  assert.equal(socketDiagnostic.errorCode, 'REQUEST_FAILED');
+  assert.equal(socketDiagnostic.stage, 'tap');
+  assert.equal(socketDiagnostic.deviceId, 'test-device');
   const screenshot = await new Promise((resolve) => {
     socket.once('message', resolve);
     socket.send(JSON.stringify({ type: 'screenshot', deviceId: 'test-device' }));
   });
-  assert.deepEqual(JSON.parse(screenshot.toString()), { type: 'frame-meta', mimeType: 'image/jpeg', deviceId: 'test-device' });
+  assert.deepEqual(JSON.parse(screenshot.toString()), { type: 'frame-meta', mimeType: 'image/jpeg', deviceId: 'test-device', source: 'capture' });
 
   const liveFrames = [];
   const liveTicks = [];
@@ -158,7 +171,7 @@ const reconnectDevice = {
   listTargets: async () => reconnectCaptures < 2 ? [] : ['test-device'],
   capture: async () => {
     reconnectCaptures += 1;
-    if (reconnectCaptures === 1) throw new Error('device disconnected');
+    if (reconnectCaptures === 1) throw Object.assign(new Error('device disconnected'), { errorCode: 'DEVICE_OFFLINE', stage: 'capture' });
     return { mimeType: 'image/jpeg', data: Buffer.from('reconnected-frame') };
   },
   tap: sessionDevice.tap,
@@ -180,6 +193,7 @@ reconnectSocket.send(JSON.stringify({ type: 'preview-start', deviceId: 'test-dev
 await new Promise((resolve) => setTimeout(resolve, 750));
 const reconnectEvents = reconnectMessages.filter((message) => message[0] === 0x7b).map((message) => JSON.parse(message.toString()));
 assert.ok(reconnectEvents.some((event) => event.type === 'preview-status' && event.reason === 'device-disconnected'));
+assert.ok(reconnectEvents.some((event) => event.diagnostic?.errorCode === 'DEVICE_OFFLINE' && event.diagnostic.deviceId === 'test-device'));
 assert.ok(reconnectEvents.some((event) => event.type === 'devices' && event.devices.length === 0));
 assert.ok(reconnectEvents.some((event) => event.type === 'preview-status' && event.running && event.reconnecting === false));
 assert.ok(reconnectMessages.some((message) => message.toString() === 'reconnected-frame'));

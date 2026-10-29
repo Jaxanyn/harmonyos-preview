@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>HarmonyOS Preview</title>
+    <style>
+      :root { color-scheme: dark; font: 14px system-ui, sans-serif; }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; background: #101318; color: #f4f6fa; }
+      header { padding: 16px 18px 12px; border-bottom: 1px solid #2b313b; }
+      h1 { margin: 0; font-size: 18px; }
+      p { margin: 6px 0 0; color: #aeb8c8; }
+      main { display: grid; gap: 12px; padding: 12px; min-width: 0; }
+      .toolbar { display: flex; gap: 8px; flex-wrap: wrap; }
+      select, button { min-height: 34px; border: 1px solid #3b4554; border-radius: 6px; background: #202733; color: #f4f6fa; padding: 7px 10px; }
+      button { cursor: pointer; }
+      button:hover { background: #2b3544; }
+      button:disabled { cursor: wait; opacity: .55; }
+      .frame { position: relative; min-height: clamp(320px, 76vh, 820px); display: grid; place-items: center; background: #050608; border: 1px solid #2b313b; border-radius: 8px; overflow: auto; }
+      img { display: block; max-width: 100%; max-height: 76vh; width: auto; height: auto; object-fit: contain; cursor: crosshair; transform-origin: center; }
+      img[hidden] { display: none; }
+      .overlay { position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; color: #aeb8c8; background: #050608cc; pointer-events: none; text-align: center; }
+      .overlay[hidden] { display: none; }
+      .gesture-marker { position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; border: 2px solid #75e0aa; border-radius: 50%; box-shadow: 0 0 0 6px #75e0aa33; pointer-events: none; animation: marker-pulse .45s ease-out forwards; }
+      .gesture-marker[hidden] { display: none; }
+      @keyframes marker-pulse { from { opacity: 1; transform: scale(.7); } to { opacity: 0; transform: scale(1.45); } }
+      .metrics { margin: 0; color: #8f9bad; font-size: 12px; min-height: 16px; }
+      .status { color: #75e0aa; }
+      .error { color: #ff9d9d; }
+      .hint { font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>HarmonyOS Preview</h1>
+      <p id="status" class="status" aria-live="polite">Connecting to Codex…</p>
+      <p class="hint">Click the device image to send a tap. Drag to swipe.</p>
+    </header>
+    <main>
+      <div class="toolbar">
+        <select id="devices" aria-label="Device"><option value="">No device selected</option></select>
+        <button id="refresh" type="button">Refresh devices</button>
+        <button id="build" type="button">Build · Install · Run</button>
+        <button id="start" type="button">Start preview</button>
+        <button id="stop" type="button">Stop preview</button>
+        <button id="fit" type="button">Fit</button>
+        <button id="zoom-out" type="button" aria-label="Zoom out">Zoom −</button>
+        <button id="zoom-in" type="button" aria-label="Zoom in">Zoom +</button>
+        <button id="fullscreen" type="button">Fullscreen</button>
+      </div>
+      <div id="frame-shell" class="frame">
+        <div id="stage-overlay" class="overlay"><span id="overlay-text">Waiting for first frame</span></div>
+        <div id="gesture-marker" class="gesture-marker" hidden></div>
+        <img id="stage" alt="HarmonyOS device preview" hidden>
+      </div>
+      <p id="metrics" class="metrics">No frame yet</p>
+    </main>
+    <script>(()=>{var b=window.parent,g=new Map,K=0,_=document.querySelector("#status"),x=document.querySelector("#devices"),c=document.querySelector("#stage"),N=document.querySelector("#frame-shell"),U=document.querySelector("#stage-overlay"),D=document.querySelector("#overlay-text"),v=document.querySelector("#gesture-marker"),z=document.querySelector("#metrics"),ee=[...document.querySelectorAll("button")],te=document.querySelector("#fit"),ne=document.querySelector("#zoom-out"),re=document.querySelector("#zoom-in"),ie=document.querySelector("#fullscreen"),s="",P="",l=0,m=!1,w=!1,r,p=0,R=500,E,C,S=!1,k=Promise.resolve(),h=1,I;function i(t,e=!1){_.textContent=t,_.className=e?"error":"status"}function M(t,e=!0){D.textContent=t,U.hidden=!e}function L(t){if(!t){z.textContent="No frame yet";return}let e=t.capturedAt?new Date(t.capturedAt).toLocaleTimeString():"unknown time";z.textContent=`${t.width}\xD7${t.height} \xB7 ${e} \xB7 ${Math.round(h*100)}%`}function T(t){h=Math.min(1.5,Math.max(.75,t)),c.style.transform=h===1?"":`scale(${h})`,r&&L(r)}function oe(){clearTimeout(I),I=void 0,v.hidden=!0}function ce(t){if(!r)return;let e=c.getBoundingClientRect(),n=N.getBoundingClientRect();!e.width||!e.height||!n.width||!n.height||(v.style.left=`${e.left-n.left+t.x*e.width/r.width}px`,v.style.top=`${e.top-n.top+t.y*e.height/r.height}px`,v.hidden=!1,clearTimeout(I),I=setTimeout(()=>{v.hidden=!0},400))}function W(t){ee.forEach(e=>{e.disabled=t})}function H(t){t?.theme&&(document.documentElement.style.colorScheme=t.theme);let e=t?.styles?.variables;if(e&&typeof e=="object")for(let[n,o]of Object.entries(e))typeof o=="string"&&document.documentElement.style.setProperty(n,o)}window.addEventListener("message",t=>{if(t.source!==b)return;let e=t.data;if(!e||e.jsonrpc!=="2.0")return;if(e.method==="ui/notifications/host-context-changed"){H(e.params);return}if(e.method==="ui/resource-teardown"){V(),Object.hasOwn(e,"id")&&b.postMessage({jsonrpc:"2.0",id:e.id,result:{}},"*");return}if(!Object.hasOwn(e,"id"))return;let n=g.get(e.id);n&&(g.delete(e.id),clearTimeout(n.timer),e.error?n.reject(new Error(e.error.message||"Host request failed")):n.resolve(e.result))});function F(t,e={}){if(w)return Promise.reject(new Error("Preview panel closed"));let n=++K;return new Promise((o,u)=>{let a=e.name==="build_run"?33e4:3e4,d=setTimeout(()=>{g.delete(n),u(new Error(`${e.name||t} timed out`))},a);g.set(n,{resolve:o,reject:u,timer:d}),b.postMessage({jsonrpc:"2.0",id:n,method:t,params:e},"*")})}function se(t,e={}){b.postMessage({jsonrpc:"2.0",method:t,params:e},"*")}async function ae(){let t=await F("ui/initialize",{appCapabilities:{},appInfo:{name:"harmonyos-preview",version:"0.1.0"},protocolVersion:"2026-01-26"});H(t?.hostContext),se("ui/notifications/initialized")}function G(t){let e=t?.content?.find(n=>n.type==="text")?.text;return e?JSON.parse(e):t?.structuredContent??{}}async function y(t,e={}){let n=await F("tools/call",{name:t,arguments:e});if(n?.isError)throw new Error(n.content?.[0]?.text??`${t} failed`);return n}async function X(){let t=l,e=G(await y("list_devices"));if(w||t!==l)return;let n=Array.isArray(e.devices)?e.devices:[],o=s;x.replaceChildren(...n.map(a=>new Option(a,a)));let u=n.includes(o)?o:n[0]??"";u!==o&&Y(u),x.value=s,m||i(s?`Device ready: ${s}`:"No device connected",!s)}function f(t,e){return!w&&m&&l===t&&s===e}function $(t="Waiting for first frame",e=!0){r=void 0,C=void 0,oe(),T(1),L(void 0),M(t,e),c.hidden=!0,c.removeAttribute("src")}function B(){l+=1,m=!1,clearTimeout(E),E=void 0,$(),p=0;let t=P;return P="",t}async function j(t){t&&await y("preview_stop",{sessionId:t})}function Y(t){let e=B();s=t,x.value=t,j(e).catch(()=>{}),i(t?`Device ready: ${t}`:"No device connected",!t)}async function ue(t,e,n){let o=t?.structuredContent??{},a=t?.structuredContent?.frame??t?.content?.find(d=>d.type==="image");if(!a||o.deviceId!==n)throw new Error("Screenshot does not match the selected device");if(!f(e,n)||(r=void 0,c.src=`data:${a.mimeType};base64,${a.data}`,await c.decode(),!f(e,n)))return!1;if(!c.naturalWidth||!c.naturalHeight)throw new Error("Screenshot has no decoded dimensions");return r={deviceId:n,width:c.naturalWidth,height:c.naturalHeight,frameId:a.frameId,capturedAt:a.capturedAt},c.style.transform=h===1?"":`scale(${h})`,c.hidden=!1,M("",!1),L(r),!0}function O(t,e,n=0){let o=k.then(async()=>{if(!f(t,e))return!1;try{let u=n>0?{afterSeq:p,waitMs:n}:{afterSeq:p},a=await y("preview_frame",u);if(!f(t,e))return!1;let d=a.structuredContent??{};if(Number.isInteger(d.seq)&&(p=Math.max(p,d.seq)),!d.frame)return d.connected===!1&&(M("Device disconnected. Waiting for reconnection."),i(`Preview disconnected: ${e}`,!0)),!1;let q=await ue(a,t,e);return q&&i(`Preview running: ${e}`),q}catch(u){if(f(t,e)){let a=/disconnect|offline/i.test(u.message)?"Device disconnected. Waiting for reconnection.":"Preview unavailable. Waiting for a new frame.";$(a),i(u.message,!0)}return!1}});return k=o,o}async function de(t,e){return O(t,e,2500)}function A(t,e){!f(t,e)||!P||S||(clearTimeout(E),E=setTimeout(async()=>{await O(t,e),A(t,e)},R))}async function le(){if(!s)throw new Error("Select a device first");if(m||w)return;let t=s,e=++l;m=!0,$("Connecting to the device\u2026");try{let n=G(await y("preview_start",{deviceId:t}));if(!f(e,t)){(!m||s!==t)&&await j(n.sessionId).catch(()=>{});return}P=n.sessionId||"",R=Math.max(500,n.pollMs||500),await O(e,t),A(e,t)}catch(n){f(e,t)&&(B(),M("Preview failed. Check the device connection."),i(n.message,!0))}}async function J(){let t=B(),e=l;M("Preview stopped. Start again to view the device."),i("Preview stopped");try{await j(t)}catch(n){!w&&l===e&&i(n.message,!0)}}async function fe(){if(!s)throw new Error("Select a device first");let t=l;W(!0);try{await y("build_run",{deviceId:s}),!w&&l===t&&i("Build, install and launch completed")}finally{W(!1)}}function Q(t){if(!r||r.deviceId!==s)return;let e=c.getBoundingClientRect();if(!(!e.width||!e.height))return{x:Math.min(r.width-1,Math.max(0,Math.round((t.clientX-e.left)*r.width/e.width))),y:Math.min(r.height-1,Math.max(0,Math.round((t.clientY-e.top)*r.height/e.height)))}}async function me(t,e){if(!m||S||!e||e.generation!==l||e.deviceId!==s||!r||e.width!==r.width||e.height!==r.height)return;let n=Q(t);if(!n)return;let o=l,u=s,d=Math.hypot(n.x-e.x,n.y-e.y)>12?"swipe":"tap";d==="tap"&&ce(n),i(d==="tap"?"Sending tap\u2026":"Sending swipe\u2026");let q=d==="tap"?{action:d,seq:p,x:n.x,y:n.y}:{action:d,seq:p,x:e.x,y:e.y,toX:n.x,toY:n.y};S=!0,clearTimeout(E);try{if(await k,!f(o,u)||!r||e.width!==r.width||e.height!==r.height)return;r=void 0,await y("preview_action",q),await de(o,u)}catch(Z){f(o,u)&&($("Action failed. Waiting for a new frame."),i(Z.message,!0))}finally{S=!1,A(l,s)}}function V(){if(!w){J().catch(()=>{}),w=!0;for(let{reject:t,timer:e}of g.values())clearTimeout(e),t(new Error("Preview panel closed"));g.clear()}}x.addEventListener("change",()=>Y(x.value));document.querySelector("#refresh").addEventListener("click",()=>X().catch(t=>i(t.message,!0)));document.querySelector("#build").addEventListener("click",()=>fe().catch(t=>i(t.message,!0)));document.querySelector("#start").addEventListener("click",()=>le().catch(t=>i(t.message,!0)));document.querySelector("#stop").addEventListener("click",()=>J().catch(t=>i(t.message,!0)));te.addEventListener("click",()=>T(1));ne.addEventListener("click",()=>T(h-.25));re.addEventListener("click",()=>T(h+.25));ie.addEventListener("click",()=>{document.fullscreenElement?document.exitFullscreen?.():N.requestFullscreen?.()});c.addEventListener("pointerdown",t=>{if(!m||S)return;let e=Q(t);e&&(C={...e,generation:l,deviceId:s,width:r.width,height:r.height},c.setPointerCapture?.(t.pointerId))});c.addEventListener("pointerup",t=>{let e=C;C=void 0,e&&me(t,e).catch(n=>i(n.message,!0))});c.addEventListener("pointercancel",()=>{C=void 0});window.addEventListener("pagehide",V);async function he(){try{await ae(),i("HarmonyOS Preview connected"),await X()}catch(t){i(`Cannot connect to Codex: ${t.message}`,!0)}}he();})();
+</script>
+  </body>
+</html>

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>HarmonyOS Preview</title>
+    <style>
+      :root { color-scheme: dark; font: 14px system-ui, sans-serif; }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; background: #101318; color: #f4f6fa; }
+      header { padding: 16px 18px 12px; border-bottom: 1px solid #2b313b; }
+      h1 { margin: 0; font-size: 18px; }
+      p { margin: 6px 0 0; color: #aeb8c8; }
+      main { display: grid; gap: 12px; padding: 12px; min-width: 0; }
+      .toolbar { display: flex; gap: 8px; flex-wrap: wrap; }
+      select, button { min-height: 34px; border: 1px solid #3b4554; border-radius: 6px; background: #202733; color: #f4f6fa; padding: 7px 10px; }
+      button { cursor: pointer; }
+      button:hover { background: #2b3544; }
+      button:disabled { cursor: wait; opacity: .55; }
+      .frame { position: relative; min-height: clamp(320px, 76vh, 820px); display: grid; place-items: center; background: #050608; border: 1px solid #2b313b; border-radius: 8px; overflow: auto; }
+      img { display: block; max-width: 100%; max-height: 76vh; width: auto; height: auto; object-fit: contain; cursor: crosshair; transform-origin: center; }
+      img[hidden] { display: none; }
+      .overlay { position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; color: #aeb8c8; background: #050608cc; pointer-events: none; text-align: center; }
+      .overlay[hidden] { display: none; }
+      .gesture-marker { position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; border: 2px solid #75e0aa; border-radius: 50%; box-shadow: 0 0 0 6px #75e0aa33; pointer-events: none; animation: marker-pulse .45s ease-out forwards; }
+      .gesture-marker[hidden] { display: none; }
+      @keyframes marker-pulse { from { opacity: 1; transform: scale(.7); } to { opacity: 0; transform: scale(1.45); } }
+      .metrics { margin: 0; color: #8f9bad; font-size: 12px; min-height: 16px; }
+      .status { color: #75e0aa; }
+      .error { color: #ff9d9d; }
+      .hint { font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>HarmonyOS Preview</h1>
+      <p id="status" class="status" aria-live="polite">Connecting to Codex…</p>
+      <p class="hint">Click the device image to send a tap. Drag to swipe.</p>
+    </header>
+    <main>
+      <div class="toolbar">
+        <select id="devices" aria-label="Device"><option value="">No device selected</option></select>
+        <button id="refresh" type="button">Refresh devices</button>
+        <button id="build" type="button">Build · Install · Run</button>
+        <button id="start" type="button">Start preview</button>
+        <button id="stop" type="button">Stop preview</button>
+        <button id="fit" type="button">Fit</button>
+        <button id="zoom-out" type="button" aria-label="Zoom out">Zoom −</button>
+        <button id="zoom-in" type="button" aria-label="Zoom in">Zoom +</button>
+        <button id="fullscreen" type="button">Fullscreen</button>
+      </div>
+      <div id="frame-shell" class="frame">
+        <div id="stage-overlay" class="overlay"><span id="overlay-text">Waiting for first frame</span></div>
+        <div id="gesture-marker" class="gesture-marker" hidden></div>
+        <img id="stage" alt="HarmonyOS device preview" hidden>
+      </div>
+      <p id="metrics" class="metrics">No frame yet</p>
+    </main>
+    <!-- APP_SCRIPT -->
+  </body>
+</html>
