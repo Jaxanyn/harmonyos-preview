@@ -89,7 +89,7 @@ MCP 请求可以并发处理；同一设备上的点击、输入、构建和启�
 - `restored`：是否从独立预览服务的状态文件恢复
 - `pollMs`：截图轮询间隔
 
-`preview_frame` 是 MCP App 专用的实时帧接口，参数 `afterSeq` 用于去重，动作后的读取可传 `waitMs` 等待下一个新帧。它返回 `content: []`，图片只放在结构化结果中，不进入模型上下文。`capture` 仍然每次重新采集设备画面，适合模型在动作后取得独立证据。
+`preview_frame` 是 MCP App 专用的实时帧接口，参数 `afterSeq` 用于去重，动作后的读取可传 `waitMs` 等待下一个新帧。结构化结果中的 `metrics` 提供 `source`、`captureMs`、`frameBytes` 和 `capturedAt`，用于判断实时预览瓶颈。它返回 `content: []`，图片只放在结构化结果中，不进入模型上下文。`capture` 仍然每次重新采集设备画面，适合模型在动作后取得独立证据。
 
 ### 连接自检与错误证据
 

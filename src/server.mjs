@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { WebSocketServer } from 'ws';
 import { createDeviceAdapter } from './device.mjs';
+import { createFrameSource } from './frame-source.mjs';
 import { buildAndRun } from './build.mjs';
 import { toDiagnostic } from './diagnostics.mjs';
 
@@ -136,7 +137,7 @@ const backoffMaxMs = Number.isFinite(configuredBackoffMaxMs) ? Math.max(pollMs, 
 const maxBodyBytes = 1024 * 1024;
 const projectPath = process.env.HARMONY_PROJECT;
 
-export function createPreviewServer({ deviceAdapter = createDeviceAdapter() } = {}) {
+export function createPreviewServer({ deviceAdapter = createDeviceAdapter(), frameSource = createFrameSource({ deviceAdapter }) } = {}) {
   const server = createServer((request, response) => {
     if (!isAllowedOrigin(request.headers.origin, server.address()?.port ?? port)) {
       response.writeHead(403, { 'content-type': 'application/json; charset=utf-8' });
@@ -213,7 +214,7 @@ export function createPreviewServer({ deviceAdapter = createDeviceAdapter() } = 
     socket.on('message', (message) => {
       const startedAt = performance.now();
       const context = { stage: 'websocket', deviceId: state.deviceId };
-      handleSocketMessage(socket, deviceAdapter, sessions, state, message, context).catch((error) => {
+      handleSocketMessage(socket, deviceAdapter, frameSource, sessions, state, message, context).catch((error) => {
         if (socket.readyState === 1) socket.send(JSON.stringify({ type: 'error', ...toDiagnostic(error,
           { errorCode: 'REQUEST_FAILED', ...context, elapsedMs: performance.now() - startedAt }) }));
       });
@@ -276,7 +277,7 @@ function captureOptions(value, allowedKeys = ['deviceId']) {
   return { deviceId: value.deviceId };
 }
 
-async function handleSocketMessage(socket, deviceAdapter, sessions, state, message, context) {
+async function handleSocketMessage(socket, deviceAdapter, frameSource, sessions, state, message, context) {
   let action;
   try { action = JSON.parse(message.toString()); } catch { throw new Error('invalid_message'); }
   if (!action || typeof action !== 'object' || Array.isArray(action)) throw new Error('invalid_message');
@@ -330,8 +331,8 @@ async function handleSocketMessage(socket, deviceAdapter, sessions, state, messa
   }
   if (action.type === 'preview-start') {
     const { deviceId } = captureOptions(action, ['type', 'deviceId']);
-    startPolling(socket, deviceAdapter, sessions, state, deviceId);
-    socket.send(JSON.stringify({ type: 'preview-status', running: true, deviceId: action.deviceId, pollMs }));
+    startPolling(socket, deviceAdapter, frameSource, sessions, state, deviceId);
+    socket.send(JSON.stringify({ type: 'preview-status', running: true, deviceId: action.deviceId, pollMs, frameSource: frameSource.name }));
     return;
   }
   if (action.type === 'preview-stop') {
@@ -346,8 +347,8 @@ async function handleSocketMessage(socket, deviceAdapter, sessions, state, messa
   }
   if (action.type === 'preview-resume') {
     const { deviceId } = captureOptions(action, ['type', 'deviceId']);
-    startPolling(socket, deviceAdapter, sessions, state, deviceId);
-    socket.send(JSON.stringify({ type: 'preview-status', running: true, paused: false, deviceId, pollMs }));
+    startPolling(socket, deviceAdapter, frameSource, sessions, state, deviceId);
+    socket.send(JSON.stringify({ type: 'preview-status', running: true, paused: false, deviceId, pollMs, frameSource: frameSource.name }));
     return;
   }
   if (action.type === 'preview-refresh') {
@@ -369,11 +370,11 @@ function sendFrame(socket, frame, deviceId, session, source = 'capture', force =
   return true;
 }
 
-function startPolling(socket, deviceAdapter, sessions, state, deviceId) {
+function startPolling(socket, deviceAdapter, frameSource, sessions, state, deviceId) {
   stopPolling(socket, sessions, state);
   state.deviceId = deviceId;
   const session = { stopped: false, timer: null, connected: true, lastHash: null, failures: 0,
-    deviceId, inFlight: false, refreshRequested: false, forceNext: false, requestNow: null };
+    deviceId, inFlight: false, refreshRequested: false, forceNext: false, requestNow: null, lastMetrics: null };
   sessions.set(socket, session);
   const current = () => !session.stopped && sessions.get(socket) === session && socket.readyState === 1;
   const poll = async () => {
@@ -386,8 +387,9 @@ function startPolling(socket, deviceAdapter, sessions, state, deviceId) {
     const startedAt = performance.now();
     let nextDelay = pollMs;
     try {
-      const frame = await deviceAdapter.capture({ deviceId });
+      const sample = await frameSource.capture({ deviceId });
       if (!current()) return;
+      const { frame, metrics } = sample;
       session.failures = 0;
       if (!session.connected) {
         session.connected = true;
@@ -396,7 +398,8 @@ function startPolling(socket, deviceAdapter, sessions, state, deviceId) {
       const force = session.forceNext;
       session.forceNext = false;
       const changed = sendFrame(socket, frame, deviceId, session, 'preview', force);
-      if (socket.readyState === 1) socket.send(JSON.stringify({ type: 'preview-tick', at: Date.now(), changed }));
+      session.lastMetrics = metrics;
+      if (socket.readyState === 1) socket.send(JSON.stringify({ type: 'preview-tick', at: Date.now(), changed, metrics }));
       // Keep the configured poll period as a start-to-start interval. A device
       // capture is often slower than pollMs; waiting another full period after
       // it completes makes the preview unnecessarily stale after a tap.

@@ -9,6 +9,7 @@ let nextFrameSeq = 0;
 const imageResult = (deviceId, width = 1260, height = 2720) => ({
   content: [],
   structuredContent: { deviceId, connected: true, sessionId: 'test-session', seq: ++nextFrameSeq,
+    metrics: { source: 'jpeg', captureMs: 42, frameBytes: 1234, capturedAt: new Date().toISOString() },
     frame: { mimeType: 'image/png', data: `${width}x${height}`, frameId: `frame-${nextFrameSeq}`, capturedAt: new Date().toISOString(), width, height } },
 });
 
@@ -106,6 +107,7 @@ async function start(panel, id = 'A', width = 1260, height = 2720) {
   assert.equal(panel.elements.stage.hidden, false, 'Show the decoded frame');
   assert.equal(panel.elements['stage-overlay'].hidden, true, 'Hide the overlay after the first frame');
   assert.match(panel.elements.metrics.textContent, new RegExp(`${width}×${height}`));
+  assert.match(panel.elements.metrics.textContent, /42ms · jpeg/);
 }
 
 // Only decoded image dimensions determine tap coordinates, including rotated screens and edge clamping.

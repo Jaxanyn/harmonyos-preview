@@ -46,7 +46,9 @@ function setMetrics(nextFrame) {
     return;
   }
   const time = nextFrame.capturedAt ? new Date(nextFrame.capturedAt).toLocaleTimeString() : 'unknown time';
-  metrics.textContent = `${nextFrame.width}×${nextFrame.height} · ${time} · ${Math.round(zoom * 100)}%`;
+  const capture = Number.isFinite(nextFrame.metrics?.captureMs) ? ` · ${nextFrame.metrics.captureMs}ms` : '';
+  const source = nextFrame.metrics?.source ? ` · ${nextFrame.metrics.source}` : '';
+  metrics.textContent = `${nextFrame.width}×${nextFrame.height} · ${time}${capture}${source} · ${Math.round(zoom * 100)}%`;
 }
 
 function setZoom(nextZoom) {
@@ -217,6 +219,7 @@ async function renderImage(result, requestedGeneration, requestedDevice) {
     height: stage.naturalHeight,
     frameId: image.frameId,
     capturedAt: image.capturedAt,
+    metrics: structured.metrics ?? null,
   };
   stage.style.transform = zoom === 1 ? '' : `scale(${zoom})`;
   stage.hidden = false;

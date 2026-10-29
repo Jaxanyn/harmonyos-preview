@@ -252,3 +252,14 @@ node scripts/check-codex.mjs `
 在当前真机地图页执行只读 `observe`、`find`（图层、导航和航图相关文字）与截图复核。地图页面返回的 UITest 层级只有空根节点，选择器查询均无匹配并转为截图证据；右侧实时预览仍保持 `running: true`、`connected: true`。
 
 该结果确认插件的截图与实时预览链路正常，但地图自绘内容没有暴露为可定位控件。图层开关、外部地图导航和自定义航图图层仍需要业务数据、外部地图状态或坐标级人工验收，当前不做没有稳定目标的自动点击。
+
+## 2026-10-29 预览性能指标与 FrameSource
+
+实时预览已接入统一的 JPEG `FrameSource` 契约。当前采集链路仍使用 HDC JPEG 回退，但每次 `preview_frame` 结构化结果会提供：
+
+- `metrics.source`：当前为 `jpeg`，为后续 MJPEG/H.264 后端保留替换点。
+- `metrics.captureMs`：从采集请求开始到帧返回的耗时。
+- `metrics.frameBytes`：当前帧字节数。
+- `metrics.capturedAt`：本次采集完成时间。
+
+本地回归覆盖 FrameSource、预览指标传递、MCP App 指标展示、断连恢复和原有 JPEG 轮询；`npm run check` 通过。当前指标用于定位截图、传输和渲染延迟，尚未引入连续视频流。

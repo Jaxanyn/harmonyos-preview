@@ -338,7 +338,7 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
       const socket = new WebSocket(wsUrl);
       const state = { socket, sessionId: randomUUID(), deviceId, frame: null, frameMeta: null, seq: 0, receivedAt: null,
         lastFrameAccessAt: Date.now(), leaseTimer: null, paused: false, mimeType: 'image/jpeg', started: false,
-        connected: false, settled: false, saving: false, pollMs: null, frameWaiters: new Set() };
+        connected: false, settled: false, saving: false, pollMs: null, frameSource: null, lastMetrics: null, frameWaiters: new Set() };
       livePreview = state;
       const timer = setTimeout(() => fail(Object.assign(new Error('Timed out waiting for the first preview frame; check device connection'),
         state.lastDiagnostic ? { errorCode: state.lastDiagnostic.errorCode, stage: state.lastDiagnostic.stage, cause: state.lastDiagnostic.cause } : {})), previewTimeoutMs);
@@ -374,6 +374,11 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
             if (event.paused !== undefined) state.paused = event.paused === true;
             if (event.diagnostic) state.lastDiagnostic = event.diagnostic;
             if (event.pollMs) state.pollMs = event.pollMs;
+            if (event.frameSource) state.frameSource = event.frameSource;
+          }
+          if (event.type === 'preview-tick' && event.metrics) {
+            state.lastMetrics = event.metrics;
+            if (state.frameMeta) state.frameMeta.capturedAt ??= event.metrics.capturedAt;
           }
           if (event.type === 'error') fail(Object.assign(new Error(event.error),
             { ...(event.errorCode ? { errorCode: event.errorCode } : {}), ...(event.stage ? { stage: event.stage } : {}),
@@ -428,6 +433,8 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
         deviceId: state.deviceId,
         seq: state.seq,
         frameAgeMs: state.receivedAt ? Math.max(0, Date.now() - state.receivedAt) : null,
+        frameSource: state.frameSource,
+        metrics: state.lastMetrics,
         frame: hasNewFrame ? {
           mimeType: frameMeta.mimeType || state.mimeType,
           data: state.frame.toString('base64'),
@@ -513,6 +520,7 @@ export async function startMcp({ input = process.stdin, output = process.stdout,
     return { previewUrl, serverUrl, wsUrl, running: Boolean(active), connected: livePreview?.connected ?? false,
       paused: livePreview?.paused ?? false,
       restored: Boolean(saved), sessionId: active?.sessionId ?? null, deviceId: active?.deviceId ?? null, pollMs: livePreview?.pollMs ?? active?.pollMs ?? null,
+      frameSource: livePreview?.frameSource ?? active?.frameSource ?? null,
       capabilities: tools.map((tool) => tool.name), runtime, deviceCheck: { status: 'not_checked' } };
   }
 

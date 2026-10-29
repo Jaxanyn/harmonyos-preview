@@ -24,7 +24,15 @@ const adapter = {
     return pending.promise;
   }
 };
-const server = createPreviewServer({ deviceAdapter: adapter });
+const frameSource = {
+  name: 'test-source',
+  supportsStreaming: true,
+  capture: async ({ deviceId }) => {
+    const frame = await adapter.capture({ deviceId });
+    return { frame, metrics: { source: 'test-source', captureMs: 7, frameBytes: frame.data.byteLength, capturedAt: '2026-10-29T00:00:00.000Z' } };
+  }
+};
+const server = createPreviewServer({ deviceAdapter: adapter, frameSource });
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const address = `http://127.0.0.1:${server.address().port}`;
 let socket;
@@ -76,6 +84,7 @@ try {
 
   send({ type: 'preview-start', deviceId: 'A' });
   await waitFor(() => captures.length === 1);
+  assert.equal(events.findLast((event) => event.type === 'preview-status' && event.running).frameSource, 'test-source');
   assert.deepEqual(captures[0].options, { deviceId: 'A' });
   await stopped();
   let boundary = events.length;
@@ -89,6 +98,7 @@ try {
   await waitFor(() => captures.length === 3);
   captures[2].resolve(frame('current-B'));
   await waitFor(() => events.some((event) => event.binary === 'current-B'));
+  assert.equal(events.findLast((event) => event.type === 'preview-tick').metrics.source, 'test-source');
   assert.deepEqual(events.find((event) => event.type === 'frame-meta' && event.deviceId === 'B'), {
     type: 'frame-meta', mimeType: 'image/jpeg', deviceId: 'B', source: 'preview', frameId: 'current-B', capturedAt: 123, width: 1440, height: 3120
   });

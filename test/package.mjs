@@ -12,6 +12,7 @@ const files = [
   'src/build.mjs',
   'src/device.mjs',
   'src/diagnostics.mjs',
+  'src/frame-source.mjs',
   'src/layout.mjs',
   'src/mcp.mjs',
   'src/project.mjs',

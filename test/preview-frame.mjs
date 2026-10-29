@@ -43,6 +43,9 @@ try {
   assert.equal(first.result.content.length, 0);
   assert.equal(firstData.connected, true);
   assert.ok(firstData.frame);
+  assert.equal(firstData.frameSource, 'jpeg');
+  assert.equal(firstData.metrics.source, 'jpeg');
+  assert.equal(firstData.metrics.frameBytes, 3);
   const duplicate = await request('tools/call', { name: 'preview_frame', arguments: { afterSeq: firstData.seq } });
   assert.equal(duplicate.result.structuredContent.frame, null);
   const waitedAt = performance.now();

@@ -55,7 +55,7 @@ list_devices
 | 构建 | `build_run` | 构建、安装并启动应用 |
 | 观察 | `observe`, `find`, `wait_for` | 读取控件树、定位目标、等待页面变化 |
 | 截图 | `capture` | 每次重新采集设备画面，返回 `frameId` 和 `capturedAt` |
-| 预览 | `preview_start`, `preview_frame`, `preview_stop` | 启动、取帧、恢复和停止实时预览 |
+| 预览 | `preview_start`, `preview_frame`, `preview_stop` | 启动、取帧、恢复和停止实时预览，并返回采集来源、耗时和帧大小指标 |
 | 操作 | `tap_element`, `tap`, `swipe`, `long_press`, `key_event`, `input_text` | 按控件或坐标操作设备 |
 
 多模块工程可给 `build_run` 传入 `moduleName`；存在多个可部署 HAP 时传入 `artifactName`。未指定时只自动选择唯一的 `*-signed.hap`。
